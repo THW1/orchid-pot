@@ -2,13 +2,13 @@
  "params": {
   "shape": "box",
   "height": 100.0,
+  "zstretch": 1.2,
   "wall": 5.0,
   "strut": 4.5,
   "cell": 17.0,
-  "zstretch": 1.2,
   "eyelets": 4,
   "seed": 7,
-  "out": "orchid_box",
+  "out": "/tmp/claude-2013/-data-AI-cc-work/e06450e3-c3f9-47fc-bbe7-cae6e0c21c37/scratchpad/f6_box",
   "graph_only": false,
   "edge_round": 1.0,
   "band": 5.0,
@@ -91,10 +91,10 @@
  "gusset_area_cm2": 5.4,
  "rim_unfilled_max_mm": 4.6,
  "decimation_ratio": 0.75,
- "triangles": 459156,
+ "triangles": 458730,
  "watertight": true,
  "winding_consistent": true,
- "volume_cm3": 168.6,
+ "volume_cm3": 168.3,
  "mass_g_petg_1.27": 214.0,
  "bbox_mm": [
   150.9,
@@ -103,9 +103,9 @@
  ],
  "bodies": 1,
  "overhang_area_cm2": {
-  "rim_underside": 5.5,
-  "elsewhere": 16.9,
-  "total_surface": 1183.4
+  "rim_underside": 5.6,
+  "elsewhere": 16.5,
+  "total_surface": 1180.9
  },
  "unsupported_islands": 0,
  "island_positions": [],

@@ -646,11 +646,16 @@ def wall_pattern(args, fr, polys, gussets, Z, ez):
     if len(rows):
         # signed distance of the grown mask (periodic in u), merged into F
         r0, r1 = max(rows[0] - 8, 0), min(rows[-1] + 9, len(Z))
-        T = np.concatenate([G[r0:r1]] * 3, axis=1)
+        # SDF of the ADDED material only (see orb.py::grow_rim_gussets): leaves the smooth
+        # strut field untouched; an SDF of all of G shifted strut faces near the rim
+        T = np.concatenate([added[r0:r1]] * 3, axis=1)
         smp = (dz * kz, du * ku_r)
         sd = (ndimage.distance_transform_edt(~T, sampling=smp)
               - ndimage.distance_transform_edt(T, sampling=smp))[:, nu:2 * nu]
-        F[r0:r1] = np.minimum(F[r0:r1], sd)
+        # 1-px blur against 1-px slivers/pinches where two gusset fronts meet (they gave a
+        # second body after export); smooth union, since a hard min leaves creases
+        sd = ndimage.gaussian_filter(sd, 1.0, mode=("nearest", "wrap"))
+        F[r0:r1] = smin(F[r0:r1], sd, args.fillet)
 
     rt = args.eyelet_wire / 2
     Rt = args.eyelet_hole / 2 + rt

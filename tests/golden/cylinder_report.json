@@ -2,13 +2,13 @@
  "params": {
   "shape": "cylinder",
   "height": 100.0,
+  "zstretch": 1.2,
   "wall": 5.0,
   "strut": 4.5,
   "cell": 17.0,
-  "zstretch": 1.2,
   "eyelets": 3,
   "seed": 7,
-  "out": "orchid_cylinder",
+  "out": "/tmp/claude-2013/-data-AI-cc-work/e06450e3-c3f9-47fc-bbe7-cae6e0c21c37/scratchpad/f6_cylinder",
   "graph_only": false,
   "edge_round": 1.0,
   "band": 5.0,
@@ -91,10 +91,10 @@
  "gusset_area_cm2": 4.5,
  "rim_unfilled_max_mm": 4.6,
  "decimation_ratio": 0.75,
- "triangles": 401602,
+ "triangles": 400842,
  "watertight": true,
  "winding_consistent": true,
- "volume_cm3": 135.8,
+ "volume_cm3": 135.6,
  "mass_g_petg_1.27": 172.0,
  "bbox_mm": [
   150.8,
@@ -104,8 +104,8 @@
  "bodies": 1,
  "overhang_area_cm2": {
   "rim_underside": 4.7,
-  "elsewhere": 16.6,
-  "total_surface": 959.8
+  "elsewhere": 16.4,
+  "total_surface": 957.9
  },
  "unsupported_islands": 0,
  "island_positions": [],

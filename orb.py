@@ -499,8 +499,15 @@ def grow_rim_gussets(args, sh, g, gaps, sel_idx, aw, stats):
     stats["rim_unfilled_max_mm"] = round(min(max(runs), na) * 2 * math.pi * rr / na, 1)
     stats["rim_gussets"] = len(gaps)
     stats["gusset_volume_cm3"] = round(float(added.sum()) * g.h ** 3 / 1000, 1)
-    sd = ndimage.distance_transform_edt(~G) * g.h - ndimage.distance_transform_edt(G) * g.h
-    g.D[:, :, rows] = np.minimum(g.D[:, :, rows], sd)
+    # SDF of the ADDED material only: inside the original solid it is >= +h, so min() keeps
+    # the smooth field there. An SDF of all of G (<= -h inside) replaced it and pushed every
+    # surface in these rows ~0.2 mm outward. Blended with the strut fillet like every other
+    # union: a hard min (or np.where switch) leaves creases that break the decimation.
+    sd = ndimage.distance_transform_edt(~added) * g.h - ndimage.distance_transform_edt(added) * g.h
+    # 1-voxel blur: removes 1-voxel slivers/pinches where two gusset fronts meet near the
+    # apex (they made a second body / non-manifold spots after export and decimation)
+    sd = ndimage.gaussian_filter(sd, 1.0, mode="nearest")
+    g.D[:, :, rows] = smin(g.D[:, :, rows], sd, args.fillet)
 
 
 def stability(sh):

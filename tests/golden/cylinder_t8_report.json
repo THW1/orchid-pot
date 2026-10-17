@@ -2,13 +2,13 @@
  "params": {
   "shape": "cylinder",
   "height": 100.0,
+  "zstretch": 1.2,
   "wall": 5.0,
   "strut": 4.5,
   "cell": 17.0,
-  "zstretch": 1.2,
   "eyelets": 3,
   "seed": 7,
-  "out": "/tmp/claude-2013/-data-AI-cc-work/e06450e3-c3f9-47fc-bbe7-cae6e0c21c37/scratchpad/c8",
+  "out": "/tmp/claude-2013/-data-AI-cc-work/e06450e3-c3f9-47fc-bbe7-cae6e0c21c37/scratchpad/f6_cylinder_t8",
   "graph_only": false,
   "edge_round": 1.0,
   "band": 5.0,
@@ -92,11 +92,11 @@
  "rim_unfilled_max_mm": 3.4,
  "micro_voids_filled": 1,
  "decimation_ratio": 0.75,
- "triangles": 357862,
+ "triangles": 356766,
  "watertight": true,
  "winding_consistent": true,
- "volume_cm3": 117.9,
- "mass_g_petg_1.27": 150.0,
+ "volume_cm3": 117.6,
+ "mass_g_petg_1.27": 149.0,
  "bbox_mm": [
   151.4,
   150.2,
@@ -104,20 +104,19 @@
  ],
  "bodies": 1,
  "overhang_area_cm2": {
-  "rim_underside": 4.7,
-  "elsewhere": 14.3,
-  "total_surface": 822.5
+  "rim_underside": 4.8,
+  "elsewhere": 13.9,
+  "total_surface": 820.1
  },
  "unsupported_islands": 0,
  "island_positions": [],
  "cantilevers": {
   "wall": {
-   "regions": 3,
-   "max_reach_mm": 9.3,
+   "regions": 2,
+   "max_reach_mm": 9.2,
    "layers": [
     25.1,
-    25.3,
-    86.5
+    25.3
    ]
   }
  }

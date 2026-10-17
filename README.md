@@ -190,7 +190,8 @@ showed no warning there.
   layout units.
 - Struts where an arch would collide stay as flat bridges, with no gusset underneath.
   Long ones show up in `cantilevers`.
-- The gussets show a slight 0.4 mm staircase texture (the voxel pitch).
+- Since v0.6.1 the gussets no longer cause a staircase texture on the struts under the rim;
+  only the gusset faces themselves come from a voxel field, smoothed by a 1-voxel blur.
 - Orb (experimental): the opening metrics use a layout at the belly radius, so sizes near
   the floor and rim are overstated by up to about 25%. Mirror-snapping moves cells at
   the band and rim lines slightly. Not yet test-printed.

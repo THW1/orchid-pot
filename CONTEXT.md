@@ -1,5 +1,5 @@
 # Project context: orchid-pot
-Verified-at: v0.6.0 (git tag)
+Verified-at: v0.6.1 (git tag)
 
 ## Purpose
 This project generates printable STLs of Voronoi orchid baskets and pots for PETG with a
