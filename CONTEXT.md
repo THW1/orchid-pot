@@ -1,5 +1,5 @@
 # Project context: orchid-pot
-Verified-at: v0.7.1 (git tag)
+Verified-at: v0.7.2 (git tag)
 
 ## Purpose
 This project generates printable STLs of Voronoi orchid baskets and pots for PETG with a
@@ -65,6 +65,10 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `orchid_pot.py::main` → `accessories.py::run`: for `--tray clip` it passes the pot's
   strut paths (`orchid_pot.py::wall_graph` in chart coordinates, `orb.py::orb_graph` in
   3D) from the same seed, so the clips find the pot's lattice gaps.
+- `potlib.py::fingerprint` is written by `orchid_pot.py::build_pot` / `orb.py::run` into
+  the pot report and compared by `accessories.py::fit_checker` (shape; for clip trays
+  also pattern). `orchid_pot.py::apply_report` (`--from-report`) copies a pot's
+  parameters, except the `RUN_KEYS` and accessory options.
 - `accessories.py::BAND_TOP_ALLOWANCE` / `BAND_EDGE_ROUND` mirror the pot's band/floor
   smooth union (k = 2.0) and band edge rounding (1.5 mm) in `orchid_pot.py::build_sdf`
   and `orb.py::build_orb_sdf`; change them together.

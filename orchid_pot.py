@@ -73,7 +73,7 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import Voronoi, cKDTree
 
-from potlib import (Grid, finish, floor_field, floor_segments, grade_fraction, poisson,
+from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
                     pt_seg_dist, require_rim_crossings, round_isect, rounded_box2,
                     seg_seg_dist, smin, wall_metrics)
 
@@ -112,6 +112,9 @@ def parse_args(argv=None):
     g.add_argument("--merge", type=float, default=3.0, help="merge Voronoi nodes closer than this [mm]")
     g.add_argument("--layer", type=float, default=0.2, help="layer height for island check [mm]")
     g = common.add_argument_group("accessories (separate prints, see accessories.py)")
+    g.add_argument("--from-report", default=None, metavar="REPORT",
+                   help="take all pot parameters (and --out) from a pot's _report.json, so "
+                        "accessories match that pot; only accessory options come from the CLI")
     g.add_argument("--parts", default="pot",
                    help="comma list of parts to build: pot, tray (default: pot)")
     g.add_argument("--tray", choices=["saucer", "clip"], default="saucer",
@@ -164,6 +167,8 @@ def parse_args(argv=None):
                    help="wall angle from horizontal at floor and opening [deg]; sets floor/opening/height")
     o.set_defaults(eyelets_default=3)
     args = p.parse_args(argv)
+    if args.from_report:
+        apply_report(p, args)
     if args.eyelets is None:
         args.eyelets = args.eyelets_default
     del args.eyelets_default
@@ -194,6 +199,28 @@ def parse_args(argv=None):
     if args.out is None:
         args.out = f"orchid_{args.shape}"
     return args
+
+
+# options that belong to this run, not to the pot (never taken from --from-report)
+RUN_KEYS = {"shape", "out", "parts", "graph_only", "from_report", "eyelets_default"}
+
+
+def apply_report(p, args):
+    """Overwrite all pot parameters with those of the pot's report. Accessory options
+    (--tray*, --standoff, --clip*, --planter*) and run options stay as given."""
+    import json as _json
+    try:
+        rp = _json.load(open(args.from_report))["params"]
+    except (OSError, ValueError, KeyError) as e:
+        p.error(f"--from-report: cannot read pot parameters from {args.from_report}: {e}")
+    if rp.get("shape") != args.shape:
+        p.error(f"--from-report: report is for shape '{rp.get('shape')}', not '{args.shape}'")
+    acc = lambda k: k.startswith(("tray", "clip", "planter")) or k == "standoff"
+    for k, v in rp.items():
+        if hasattr(args, k) and k not in RUN_KEYS and not acc(k):
+            setattr(args, k, v)
+    if args.out is None:
+        args.out = rp["out"]
 
 
 # ---------- geometry helpers ----------
@@ -758,6 +785,7 @@ def build_pot(args):
     stats = {"params": vars(args), "shape": {"type": args.shape, **fr.describe()}}
     t0 = time.time()
     polys, gussets = wall_graph(args, fr, rng, stats)
+    stats["fingerprint"] = fingerprint(args, polys)      # accessories match against this
     fsegs = floor_segments(args, fr, rng)
     print(f"graph {time.time() - t0:.1f}s: {len(polys)} wall struts, {len(fsegs)} floor struts")
     if args.graph_only:

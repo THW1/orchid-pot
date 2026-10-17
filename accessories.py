@@ -23,6 +23,9 @@
 #              Rejected: hooks on the rounded edge only (a detent the load cams open; the orb's
 #              leaning band was not gripped at all) and a 1 mm hook with a 6 mm standoff.
 #              All verified by mesh intersection with the real pots (seated, lifted, pressed).
+#              The same check runs on every tray build when the pot's STL/report sit next to
+#              it (fit_checker), after a fingerprint match. Rejected: trusting the same
+#              parameters were given (a tray for another seed silently collided).
 # Constraints: Same packages as potlib.py. Watertightness is a print setting (4-5 walls,
 #              ~102-105 % flow, dry PETG), not geometry; see README.
 # Invariants:  Tray z = 0 is the bed; the pot bottom sits at floor + standoff (reported as
@@ -30,12 +33,15 @@
 # Tests:       tests/test_regression.py::test_tray_saucer_checks, ::test_tray_clip_checks.
 # === END CONTEXT ===
 import copy
+import json
 import math
+import os
 import time
 
 import numpy as np
+import trimesh
 
-from potlib import Grid, finish, round_isect, smin
+from potlib import Grid, fingerprint, finish, round_isect, smin
 
 
 BAND_TOP_ALLOWANCE = 0.75      # mm above --band where the hook's catch face starts (see tray_sdf)
@@ -236,6 +242,41 @@ def tray_sdf(args, tg, stats, clip_params=()):
     return g
 
 
+def fit_checker(args, n_clips, fp):
+    """extra_checks for finish(): if the pot's STL and report are next to the tray (same
+    --out prefix), verify the fingerprints and the real fit by mesh intersection. Seated:
+    no overlap with the tray (the pot only touches the feet). Clip: lifted 1.5 mm, every
+    hook must catch the band. Missing pot files: skipped, with a note in the report."""
+    pot_stl, pot_rep = args.out + ".stl", args.out + "_report.json"
+
+    def check(tray, stats):
+        if not (os.path.exists(pot_stl) and os.path.exists(pot_rep)):
+            stats["fit_check"] = {"ok": None, "note": f"skipped: no pot STL/report at {args.out}.*"}
+            return
+        pfp = json.load(open(pot_rep)).get("fingerprint", {})
+        bad = [k for k in fp if pfp.get(k) != fp[k]]
+        if bad:
+            stats["fit_check"] = {"ok": False, "note": f"pot does not match this tray ({', '.join(bad)} "
+                                                       f"fingerprint differs); use --from-report {pot_rep}"}
+            return
+        pot = trimesh.load(pot_stl)
+        zb = stats["tray"]["pot_bottom_z_mm"]
+
+        def overlap(dz):
+            p = pot.copy(); p.apply_translation([0, 0, zb + dz])
+            i = trimesh.boolean.intersection([p, tray], engine="manifold")
+            return (float(i.volume), len(i.split(only_watertight=False))) if len(i.faces) else (0.0, 0)
+        seated = overlap(0.02)
+        res = {"seated_overlap_mm3": round(seated[0], 2)}
+        ok = seated[0] <= 0.05
+        if n_clips:
+            lifted = overlap(1.5)
+            res.update({"lifted_1.5mm_hooks_engaged": lifted[1], "clips": n_clips})
+            ok = ok and lifted[1] >= n_clips
+        stats["fit_check"] = {"ok": ok, **res}
+    return check
+
+
 def run(args, parts, geom, struts=None):
     t0 = time.time()
     tg = TrayGeometry(args, geom)
@@ -246,8 +287,13 @@ def run(args, parts, geom, struts=None):
         a.height, a.eyelets = 1e6, 0
         if a.standoff is None:
             a.standoff = 6.0 if a.tray == "saucer" else clip_standoff(a, tg)
-        stats = {"params": vars(a), "part": "tray"}
+        fp = fingerprint(args, struts if args.tray == "clip" else None)
+        stats = {"params": vars(a), "part": "tray", "fingerprint": fp}
         cp = place_clips(tg, args, struts, stats) if args.tray == "clip" else ()
         g = tray_sdf(a, tg, stats, cp)
         print(f"tray sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
-        finish(g, a, stats, t0)
+        finish(g, a, stats, t0, extra_checks=fit_checker(args, len(cp), fp))
+        fc = stats["fit_check"]
+        if fc["ok"] is False:
+            raise SystemExit(f"error: tray does not fit the pot {args.out}.stl: {fc}")
+        print("fit check:", fc)

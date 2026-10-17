@@ -12,6 +12,7 @@
 #              goldens for box and cylinder).
 # Related:     Used by orchid_pot.py (box, cylinder) and orb.py.
 # === END CONTEXT ===
+import hashlib
 import io
 import json
 import math
@@ -305,10 +306,45 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
 #      the report.
 # Used-by: orchid_pot.py::main, orb.py::run
 # Invariant: g.D is released before decimation; callers must not use the grid afterwards.
+# Parameters that set the pot's outline, band and band-top height (what a tray sits on).
+SHAPE_KEYS = ("shape", "size", "corner_r", "diameter", "taper", "height", "stretch",
+              "min_wall_angle", "wall", "band", "rim", "floor", "fillet")
+
+
+def fingerprint(args, struts=None):
+    """Identity of a pot as seen by its accessories: 'shape' hashes SHAPE_KEYS (orb: without
+    the derived height); 'pattern' hashes the strut paths themselves (rounded to 1 um), so
+    any parameter or library change that moves a strut changes it."""
+    d = vars(args)
+    keys = [k for k in SHAPE_KEYS if k in d and not (k == "height" and d.get("shape") == "orb")]
+    out = {"shape": hashlib.sha256(json.dumps({k: d[k] for k in keys}, sort_keys=True).encode()).hexdigest()[:12]}
+    if struts is not None:
+        q = np.round(np.vstack([np.asarray(p, float).reshape(len(p), -1)[:, :3] for p in struts]) * 1000).astype(np.int64)
+        out["pattern"] = hashlib.sha256(q.tobytes()).hexdigest()[:12]
+    return out
+
+
 def stl_roundtrip_ok(mesh):
     """True if the mesh is still watertight after binary STL export + reload."""
     back = trimesh.load(io.BytesIO(mesh.export(file_type="stl")), file_type="stl")
     return bool(back.is_watertight)
+
+
+def export_safe(mesh, stats):
+    """The mesh as it will be in the STL file. If the float32 round trip breaks it (vertices
+    that merge in float32 split off zero-volume two-triangle slivers; seen on box --seed 3),
+    use the round-tripped mesh without those slivers. Meshes that pass stay untouched, so
+    outputs that were fine do not change. None if no watertight STL can be had."""
+    if stl_roundtrip_ok(mesh):
+        return mesh
+    back = trimesh.load(io.BytesIO(mesh.export(file_type="stl")), file_type="stl")
+    parts = back.split(only_watertight=False)
+    keep = [q for q in parts if abs(q.volume) >= 1.0]
+    fixed = clean(trimesh.util.concatenate(keep))
+    if fixed.is_watertight and stl_roundtrip_ok(fixed):
+        stats["stl_slivers_removed"] = stats.get("stl_slivers_removed", 0) + len(parts) - len(keep)
+        return fixed
+    return None
 
 
 def finish(g, args, stats, t0, extra_checks=None):
@@ -323,12 +359,14 @@ def finish(g, args, stats, t0, extra_checks=None):
     for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
         dec = clean(trimesh.Trimesh(v, f, process=True))
-        if dec.is_watertight and stl_roundtrip_ok(dec):
-            mesh = dec
+        cand = export_safe(dec, stats) if dec.is_watertight else None
+        if cand is not None:
+            mesh = cand
             stats["decimation_ratio"] = ratio
             break
     else:
         stats["decimation_skipped"] = "result not watertight (after STL round trip) or disabled"
+        mesh = export_safe(mesh, stats) or mesh
     stats["stl_roundtrip_watertight"] = stl_roundtrip_ok(mesh)
     check_mesh(mesh, args, stats)
     if extra_checks:

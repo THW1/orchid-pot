@@ -8,3 +8,5 @@ shapely>=2.1
 # needed by trimesh for the slice polygons used in the island and cantilever checks
 rtree>=1.4
 networkx>=3.6
+# mesh booleans for the tray fit check (trimesh engine "manifold")
+manifold3d>=3.5

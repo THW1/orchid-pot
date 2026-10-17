@@ -42,7 +42,7 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import SphericalVoronoi, cKDTree
 
-from potlib import (Grid, finish, floor_field, floor_segments, grade_fraction, pt_seg_dist,
+from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, pt_seg_dist,
                     require_rim_crossings, round_isect, rounded_box2, smin, wall_metrics)
 
 
@@ -539,6 +539,7 @@ def run(args):
     stats = {"params": vars(args), "shape": {"type": "orb (experimental)", **sh.describe()}}
     t0 = time.time()
     polys = orb_graph(args, sh, rng, stats)
+    stats["fingerprint"] = fingerprint(args, polys)      # accessories match against this
     orb_metrics(args, sh, polys, stats)
     gaps = rim_gaps(args, sh, polys, stats)
     fsegs = floor_segments(args, sh, rng)

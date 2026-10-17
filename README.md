@@ -26,13 +26,14 @@ Design rationale and rejected alternatives are in the context header of `orchid_
 Install the Python packages:
 
 ```bash
-pip3 install -r requirements.txt          # numpy scipy scikit-image trimesh
-                                          # fast-simplification shapely rtree networkx
+pip3 install -r requirements.txt          # numpy scipy scikit-image trimesh fast-simplification
+                                          # shapely rtree networkx manifold3d
 pip3 install -r requirements-dev.txt      # adds pytest and pyflakes
 ```
 
 `rtree` and `networkx` are not imported directly. trimesh needs them for the slice
-polygons that the island and cantilever checks use. The lower bounds in
+polygons that the island and cantilever checks use. `manifold3d` is trimesh's boolean
+engine for the tray fit check. The lower bounds in
 `requirements.txt` are the tested versions; older versions are untested.
 
 Blender comes from the distribution (for example `dnf install blender`) or from
@@ -53,6 +54,7 @@ python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~
 python3 orchid_pot.py cylinder --parts pot,tray        # pot + drip tray (saucer)
 python3 orchid_pot.py box --parts tray                 # only the tray (~5 s), pot unchanged
 python3 orchid_pot.py orb --parts tray --tray clip     # clip-on tray for hanging pots
+python3 orchid_pot.py box --from-report pot_s3_report.json --parts tray --tray clip  # tray for that pot
 python3 orchid_pot.py cylinder --help                  # options for that shape
 blender -b --factory-startup --python render.py -- $PWD/orchid_box.stl $PWD/preview_box
 ```
@@ -129,6 +131,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
+| `--from-report` | – | a pot's `_report.json` | Take all pot parameters (and `--out`) from that pot, so the accessory matches it. Only accessory options come from the command line |
 | `--parts` | `pot` | `pot`, `tray`, `pot,tray` | Parts to build. Each writes its own STL + report: `orchid_<shape>_tray.stl` (saucer), `orchid_<shape>_tray_clip.stl` (clip) |
 | `--tray` | `saucer` | `saucer`, `clip` | `saucer` for standing pots; `clip` snaps onto the pot's bottom band, for hanging pots |
 | `--tray-gap` | 3 | 2–5 | Gap between the pot's outline (widest at any height) and the tray wall |
@@ -148,6 +151,18 @@ feet; when lifted 0.6–1.2 mm, all hooks engage. Arm strain is about 2 % (PETG 
 guideline 1.5–2 %). To remove the tray, bend the arms outward one by one. The clearance
 is an estimate: print a test tray first [UNVERIFIED] and adjust `--clip-clearance`.
 Defaults: box about 218 ml / 98 g, cylinder about 172 ml / 83 g, orb about 187 ml / 84 g.
+
+**Matching tray and pot:**
+- **Fingerprints:** pot and tray reports carry a `fingerprint`. `shape` hashes outline and
+  band parameters; `pattern` hashes the strut paths themselves, which is what the clips
+  depend on.
+- **Fit check:** if the pot's STL and report sit next to the tray (same `--out` prefix,
+  e.g. after `--parts pot,tray` or with `--from-report`), the tray run checks it
+  automatically by mesh intersection. Seated, the pot must touch only the feet; for the
+  clip tray, lifted 1.5 mm, every hook must catch the band.
+- **On mismatch:** the run stops with an error, e.g. a tray built with another `--seed`.
+  The result is in the report as `fit_check`. Without pot files next to the tray, the
+  check is skipped and noted.
 
 The pot stands on 8 feet under its solid bottom band, not under the floor lattice, so
 drainage stays open. Each foot has an outer stop, which leaves about 1 mm side play. The
@@ -186,8 +201,10 @@ STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 relea
 Regenerate the golden files only for an intended output change. The experimental orb has
 only a smoke test of its strut graph; the trays (box, orb) are checked for one watertight
 body, no islands and at least 80 ml capacity, and the clip trays for all clips placed and
-≤ 2 % arm strain. Every STL must stay watertight after export and reload
-(`stl_roundtrip_watertight`).
+≤ 2 % arm strain. A clip tray for a pot with another pattern must be refused, and the
+same tray via `--from-report` must pass the fit check. Every STL must stay watertight
+after export and reload (`stl_roundtrip_watertight`). Where float32 export would split
+off zero-volume slivers, they are removed (`stl_slivers_removed`).
 
 ## Report (`<out>_report.json`)
 
