@@ -55,6 +55,7 @@ python3 orchid_pot.py cylinder --parts pot,tray        # pot + drip tray (saucer
 python3 orchid_pot.py box --parts tray                 # only the tray (~5 s), pot unchanged
 python3 orchid_pot.py orb --parts tray --tray clip     # clip-on tray for hanging pots
 python3 orchid_pot.py box --from-report pot_s3_report.json --parts tray --tray clip  # tray for that pot
+python3 orchid_pot.py cylinder --taper 8 --parts pot,planter --eyelets 0 --planter-eyelets 3  # hanging planter
 python3 orchid_pot.py cylinder --help                  # options for that shape
 blender -b --factory-startup --python render.py -- $PWD/orchid_box.stl $PWD/preview_box
 ```
@@ -132,13 +133,19 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
 | `--from-report` | – | a pot's `_report.json` | Take all pot parameters (and `--out`) from that pot, so the accessory matches it. Only accessory options come from the command line |
-| `--parts` | `pot` | `pot`, `tray`, `pot,tray` | Parts to build. Each writes its own STL + report: `orchid_<shape>_tray.stl` (saucer), `orchid_<shape>_tray_clip.stl` (clip) |
+| `--parts` | `pot` | `pot`, `tray`, `planter`, combinations | Parts to build. Each writes its own STL + report: `orchid_<shape>_tray.stl` (saucer), `orchid_<shape>_tray_clip.stl` (clip), `orchid_<shape>_planter.stl` |
 | `--tray` | `saucer` | `saucer`, `clip` | `saucer` for standing pots; `clip` snaps onto the pot's bottom band, for hanging pots |
 | `--tray-gap` | 3 | 2–5 | Gap between the pot's outline (widest at any height) and the tray wall |
 | `--tray-wall` | 2.4 | 2.0–3.0 | Tray wall thickness (about 6 lines for watertight walls) |
 | `--tray-floor` | 2.0 | 1.6–2.4 | Tray floor thickness |
 | `--standoff` | saucer 6, clip auto (~10–11) | 4–8 (saucer) | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm. Clip: chosen so the arm stays ≤ 2 % strain |
 | `--tray-rise` | 4 | 2–8 | Tray wall height above the pot bottom |
+| `--planter-gap` | 8 | 6–12 | Gap between the pot and the planter's inner wall |
+| `--planter-wall` | 2.4 | 2.0–3.0 | Planter wall thickness, measured normal to the wall |
+| `--planter-floor` | 2.0 | 1.6–2.4 | Planter floor thickness |
+| `--planter-ribs` | 4 | 3–4 | Vertical centring ribs inside (45° lead-in at the top) |
+| `--planter-rib-clearance` | 1.0 | 0.5–1.5 | Clearance between ribs and pot |
+| `--planter-eyelets` | 0 | 0, 3, 4 | Eyelets on the planter rim for a hanging planter; then use `--eyelets 0` for the pot. Box: 0, 2 or 4 |
 | `--clips` | box 4, round 3 | 3–4 | Number of clips (box: side centres; round: 120° apart, each moved into a free lattice gap) |
 | `--clip-width` | 8 | 6–10 | Clip width along the band |
 | `--clip-thickness` | 1.6 | 1.2–2.0 | Clip arm thickness (4 lines). Thicker = stiffer, needs a longer arm |
@@ -151,6 +158,21 @@ feet; when lifted 0.6–1.2 mm, all hooks engage. Arm strain is about 2 % (PETG 
 guideline 1.5–2 %). To remove the tray, bend the arms outward one by one. The clearance
 is an estimate: print a test tray first [UNVERIFIED] and adjust `--clip-clearance`.
 Defaults: box about 218 ml / 98 g, cylinder about 172 ml / 83 g, orb about 187 ml / 84 g.
+
+**Planter (`--parts planter`, decorative):** a closed outer pot. Box and cylinder planters
+are flush with the pot rim; the orb gets a bowl up to its belly, because a closed onion
+could not be assembled.
+- **Insertion rule:** at every height, the inner wall follows the widest part of the pot
+  *below* it, plus the gap, because the pot slides in from above. So the box planter is
+  straight, a positive taper is followed, and a negative taper (pot widest at the floor)
+  gives a straight cylinder.
+- **Inside:** the pot stands on the same feet as in the tray (6 mm standoff, 5 mm water
+  reservoir) and is centred by ribs with 1 mm clearance.
+- **Defaults:** box about 290 g / 132 ml reservoir, cylinder about 245 g / 105 ml, orb bowl
+  about 147 g / 66 ml.
+- **Fit check:** like the tray, plus a sliding-in test (no overlap 10, 30 and 60 mm above
+  the end position). A closed planter keeps air from the roots; use it only for less
+  demanding plants.
 
 **Matching tray and pot:**
 - **Fingerprints:** pot and tray reports carry a `fingerprint`. `shape` hashes outline and
@@ -201,7 +223,8 @@ STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 relea
 Regenerate the golden files only for an intended output change. The experimental orb has
 only a smoke test of its strut graph; the trays (box, orb) are checked for one watertight
 body, no islands and at least 80 ml capacity, and the clip trays for all clips placed and
-≤ 2 % arm strain. A clip tray for a pot with another pattern must be refused, and the
+≤ 2 % arm strain, and the box planter must fit (seated and sliding in) around the repo's
+box pot. A clip tray for a pot with another pattern must be refused, and the
 same tray via `--from-report` must pass the fit check. Every STL must stay watertight
 after export and reload (`stl_roundtrip_watertight`). Where float32 export would split
 off zero-volume slivers, they are removed (`stl_slivers_removed`).

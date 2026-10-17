@@ -1,5 +1,5 @@
 # Project context: orchid-pot
-Verified-at: v0.7.2 (git tag)
+Verified-at: v0.8.0 (git tag)
 
 ## Purpose
 This project generates printable STLs of Voronoi orchid baskets and pots for PETG with a
@@ -14,7 +14,8 @@ orchid_pot.py           CLI + box/cylinder pipeline: frame → strut graph → S
 potlib.py               shape-independent helpers: SDF primitives, Poisson, Grid, floor, metrics,
                         meshing, checks, finish() (mesh → decimate → check → write)
 orb.py                  EXPERIMENTAL orb pipeline (sphere Voronoi, 3D printability, shell SDF)
-accessories.py          optional separate parts: drip tray (saucer, clip); reads pot geometry read-only
+accessories.py          optional separate parts: drip tray (saucer, clip), planter (orb: bowl);
+                        reads pot geometry read-only
 render.py               Blender (headless, Cycles) preview renders of an STL
 tests/test_regression.py  byte-identical STL + report for box, cylinder, cylinder --taper 8;
                         orb strut-graph smoke test

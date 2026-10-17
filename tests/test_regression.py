@@ -82,3 +82,17 @@ def test_tray_refuses_foreign_pot_and_from_report(tmp_path):
     assert good.returncode == 0
     fc = json.loads((tmp_path / "pot_tray_clip_report.json").read_text())["fit_check"]
     assert fc["ok"] and fc["seated_overlap_mm3"] <= 0.05 and fc["lifted_1.5mm_hooks_engaged"] == 4
+
+
+def test_planter_box_fits_repo_pot(tmp_path):
+    """Planter (no golden yet) around a copy of the repo's box pot: one watertight body, no
+    islands; the pot sits without overlap and slides in freely (fit check)."""
+    import shutil
+    for ext in (".stl", "_report.json"):
+        shutil.copy(ROOT / f"orchid_box{ext}", tmp_path / f"pot{ext}")
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "box", "--parts", "planter",
+                    "--out", str(tmp_path / "pot")], check=True, capture_output=True)
+    r = json.loads((tmp_path / "pot_planter_report.json").read_text())
+    assert r["stl_roundtrip_watertight"] and r["bodies"] == 1 and r["unsupported_islands"] == 0
+    fc = r["fit_check"]
+    assert fc["ok"] and max(fc["insertion_overlap_mm3_at_10/30/60mm"]) <= 0.05

@@ -116,7 +116,7 @@ def parse_args(argv=None):
                    help="take all pot parameters (and --out) from a pot's _report.json, so "
                         "accessories match that pot; only accessory options come from the CLI")
     g.add_argument("--parts", default="pot",
-                   help="comma list of parts to build: pot, tray (default: pot)")
+                   help="comma list of parts to build: pot, tray, planter (default: pot)")
     g.add_argument("--tray", choices=["saucer", "clip"], default="saucer",
                    help="saucer (standing) or clip (snaps onto the pot's bottom band, for hanging)")
     g.add_argument("--tray-gap", type=float, default=3.0, help="gap pot outline -> tray wall [mm]")
@@ -126,6 +126,13 @@ def parse_args(argv=None):
                    help="pot bottom above the tray floor [mm] (default: saucer 6; clip: from the "
                         "2 %% strain limit, about 10-11)")
     g.add_argument("--tray-rise", type=float, default=4.0, help="tray wall above the pot bottom [mm]")
+    g.add_argument("--planter-gap", type=float, default=8.0, help="gap pot -> planter inner wall [mm]")
+    g.add_argument("--planter-wall", type=float, default=2.4, help="planter wall thickness [mm]")
+    g.add_argument("--planter-floor", type=float, default=2.0, help="planter floor thickness [mm]")
+    g.add_argument("--planter-ribs", type=int, default=4, help="centring ribs inside the planter")
+    g.add_argument("--planter-rib-clearance", type=float, default=1.0, help="rib-to-pot clearance [mm]")
+    g.add_argument("--planter-eyelets", type=int, default=0,
+                   help="eyelets on the planter rim for hanging (0 = standing; box: 2 or 4)")
     g.add_argument("--clips", type=int, default=None, help="clip count (default: box 4, round 3)")
     g.add_argument("--clip-width", type=float, default=8.0, help="clip width along the band [mm]")
     g.add_argument("--clip-thickness", type=float, default=1.6, help="clip arm thickness [mm]")
@@ -192,8 +199,11 @@ def parse_args(argv=None):
         if not 0.6 <= args.stretch <= 2.0:
             p.error("orb: --stretch must be in [0.6, 2.0]")
     args.parts = [s.strip() for s in args.parts.split(",") if s.strip()]
-    if not args.parts or set(args.parts) - {"pot", "tray"}:
-        p.error("--parts takes a comma list of: pot, tray")
+    if not args.parts or set(args.parts) - {"pot", "tray", "planter"}:
+        p.error("--parts takes a comma list of: pot, tray, planter")
+    if args.planter_eyelets == 1 or args.planter_eyelets < 0 or \
+            (args.shape == "box" and args.planter_eyelets not in (0, 2, 4)):
+        p.error("--planter-eyelets: 0 or >= 2 (box: 0, 2 or 4)")
     if args.standoff is not None and args.standoff < 2:
         p.error("--standoff must be >= 2 mm (water line stays 1 mm below the pot bottom)")
     if args.out is None:
