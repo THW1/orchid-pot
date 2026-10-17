@@ -138,7 +138,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--tray-gap` | 3 | 2–5 | Gap between the pot's outline (widest at any height) and the tray wall |
 | `--tray-wall` | 2.4 | 2.0–3.0 | Tray wall thickness (about 6 lines for watertight walls) |
 | `--tray-floor` | 2.0 | 1.6–2.4 | Tray floor thickness |
-| `--standoff` | saucer 6, clip auto (~10–11) | 4–8 (saucer) | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm. Clip: chosen so the arm stays ≤ 2 % strain |
+| `--standoff` | saucer 6, clip auto (~10–12) | 4–8 (saucer) | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm. Clip: chosen so the arm stays ≤ 2 % strain |
 | `--tray-rise` | 4 | 2–8 | Tray wall height above the pot bottom |
 | `--planter-gap` | 8 | 6–12 | Gap between the pot and the planter's inner wall |
 | `--planter-wall` | 2.4 | 2.0–3.0 | Planter wall thickness, measured normal to the wall |
@@ -153,7 +153,12 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--clip-clearance` | 0.3 | 0.2–0.5 | Clearance between clip and pot; adjust after a test print |
 
 **Clip tray:** flexible arms rise beside the bottom band. Their hooks snap over the band top
-into lattice openings and sit on the flat band top. When seated, the pot only touches the
+into lattice openings and sit on the flat band top.
+- **Placement:** clip positions are checked against the strut paths themselves, over the
+  whole hook height: at least 1.5 mm to every strut surface (`clip_strut_clearance_mm`).
+- **Negative taper:** the band is widest at the bottom, so the arm stands further out and
+  the snap deflection grows (`clip_snap_deflection_mm`); the standoff follows
+  automatically. When seated, the pot only touches the
 feet; when lifted 0.6–1.2 mm, all hooks engage. Arm strain is about 2 % (PETG snap-fit
 guideline 1.5–2 %). To remove the tray, bend the arms outward one by one. The clearance
 is an estimate: print a test tray first [UNVERIFIED] and adjust `--clip-clearance`.

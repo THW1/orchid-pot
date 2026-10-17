@@ -50,7 +50,15 @@ import trimesh
 from potlib import Grid, fingerprint, finish, round_isect, smin
 
 
-BAND_TOP_ALLOWANCE = 0.75      # mm above --band where the hook's catch face starts (see tray_sdf)
+def band_top_allowance(args):
+    """How far the band's real top rises above --band (the hook's catch face must clear it):
+    the band/floor smooth union (k = 2.0 in orchid_pot.build_sdf / orb.build_orb_sdf) adds up
+    to k/4 = 0.5 mm, strut fillets about --fillet / 6 (calibrated at the default 1.5: band top
+    measured 5.46-5.72 mm for a 5 mm band). Larger fillets raise it; the fit check verifies."""
+    return 0.5 + args.fillet / 6
+
+
+CLIP_STRUT_MARGIN = 1.5        # mm between a clip and a strut surface (covers the strut fillet)
 # The band's outer top edge is rounded with r = 1.5 mm in the wall's normal direction
 # (rounded_box2 in orchid_pot.build_sdf and orb.build_orb_sdf); horizontally that is
 # 1.5 * band_w / wall (orb at 55 deg: 1.83 mm). A hook that only reaches the rounding acts as
@@ -63,7 +71,8 @@ class TrayGeometry:
     """Read-only view of a pot shape for accessories: outline SDF of the vertical
     projection, the band centre line at z = 0 as a periodic parameter (box: arc length u
     on the mid-curve, round shapes: angle theta), band width at z = 0 and the outward lean
-    of the band per mm of height."""
+    of the band per mm of height (lean: clamped >= 0, for the foot stops, which only need to
+    clear an outward lean; lean_signed: real, for the hook's reach onto the band top)."""
 
     def __init__(self, args, geom):
         self.shape, self.geom, t = args.shape, geom, args.wall
@@ -73,17 +82,19 @@ class TrayGeometry:
             self.period, self.arc = geom.P, 1.0
             self.foot_params = [k * geom.quad + d for k in range(4)
                                 for d in (geom.c, geom.side + geom.r * math.pi / 4)]
-            self.band_w, self.lean = t, 0.0
+            self.band_w, self.lean, self.lean_signed = t, 0.0, 0.0
         else:
             if args.shape == "cylinder":
                 r_proj = max(float(geom.r_out(0.0)), float(geom.r_out(geom.H)))
                 self.r_mid0, self.band_w = float(geom.r_mid(0.0)), t / geom.cos_t
+                self.lean_signed = geom.tan_t
                 self.lean = max(geom.tan_t, 0.0)
             else:                                                # orb
                 r_proj = geom.a_out
                 self.r_mid0 = geom.r_floor
                 al = math.radians(args.min_wall_angle)
                 self.band_w, self.lean = t / math.sin(al), 1 / math.tan(al)
+                self.lean_signed = self.lean
             self.outline = lambda x, y, R=r_proj: np.hypot(x, y) - R
             self.extent = r_proj
             self.period, self.arc = 2 * math.pi, self.r_mid0
@@ -106,50 +117,58 @@ class TrayGeometry:
             return [k * self.period / n + self.geom.c for k in range(n)]
         return [k * self.period / n for k in range(n)]
 
-    def strut_params(self, struts, zc):
-        """Band parameters where strut centre lines cross height zc (pot coordinates)."""
-        out = []
-        for p in struts:
-            zi = 1 if p.shape[1] == 2 else 2                     # (u, z) chart or 3D
-            for a, b in zip(p[:-1], p[1:]):
-                if (a[zi] - zc) * (b[zi] - zc) < 0:
-                    q = a + (zc - a[zi]) / (b[zi] - a[zi]) * (b - a)
-                    if self.shape == "box":
-                        out.append(q[0] % self.period)
-                    elif self.shape == "cylinder":
-                        out.append((q[0] / self.geom.r_ref) % self.period)
-                    else:
-                        out.append(math.atan2(q[1], q[0]) % self.period)
-        return np.sort(out)
+
+def strut_chart(tg, struts, step=0.25):
+    """Strut centre lines as points (arc length along the band line, pot height z),
+    resampled every `step` mm; box/cylinder come in their (u, z) chart, the orb in 3D."""
+    out = []
+    for p in struts:
+        p = np.asarray(p, float)
+        seg = np.linalg.norm(np.diff(p, axis=0), axis=1)
+        pts = np.vstack([a_ + (b_ - a_) * np.linspace(0, 1, max(1, math.ceil(L / step)), endpoint=False)[:, None]
+                         for a_, b_, L in zip(p[:-1], p[1:], seg)] + [p[-1:]])
+        if p.shape[1] == 2:
+            q = pts[:, 0] % tg.period if tg.shape == "box" else (pts[:, 0] / tg.geom.r_ref) % tg.period
+            z = pts[:, 1]
+        else:
+            q, z = np.arctan2(pts[:, 1], pts[:, 0]) % tg.period, pts[:, 2]
+        out.append(np.column_stack([q * tg.arc, z]))
+    return np.vstack(out)
 
 
 def place_clips(tg, args, struts, stats):
-    """Clip parameters: each target (side centre / even angle) moves into a lattice gap at
-    hook height that is wide enough for the clip plus one strut and 1 mm per side;
-    a target in a too-narrow gap takes the nearest free wide-enough gap instead."""
+    """Clip parameters. A position is free if the clip's hook region (its width along the
+    band x the hook's height range) keeps CLIP_STRUT_MARGIN from every strut surface, i.e.
+    strut/2 + margin from the strut centre lines, checked over the whole hook height against
+    the strut paths themselves (works without the pot STL). Each target (box: side centres,
+    round: even angles) takes the nearest free position; clips stay 2 clip widths apart.
+    Rejected: a gap width measured at one height (struts at 35 deg move 1.4 mm sideways per
+    mm of height, so they could cut into the hook)."""
     n = args.clips if args.clips is not None else (4 if tg.shape == "box" else 3)
-    need = args.clip_width + args.strut + 2.0
-    cr = tg.strut_params(struts, args.band + BAND_TOP_ALLOWANCE + args.clip_clearance + 1.0)
-    P = tg.period
-    gaps = [(cr[k], cr[(k + 1) % len(cr)] + (P if k + 1 == len(cr) else 0)) for k in range(len(cr))]
-    wide = [(a, b) for a, b in gaps if (b - a) * tg.arc >= need]
-    used, params, widths = set(), [], []
+    z_lo = args.band + band_top_allowance(args) + args.clip_clearance
+    z_hi = z_lo + 2.0                                         # hook (lip) height, see tray_sdf
+    need = args.strut / 2 + CLIP_STRUT_MARGIN
+    pts = strut_chart(tg, struts)
+    pts = pts[(pts[:, 1] > z_lo - need - 1) & (pts[:, 1] < z_hi + need + 1)]
+    L = tg.period * tg.arc                                    # band line length
+    cand = np.arange(0, L, 0.5)
+    ds = np.abs((pts[None, :, 0] - cand[:, None] + L / 2) % L - L / 2)
+    dx = np.maximum(ds - args.clip_width / 2, 0)
+    dz = np.maximum(np.maximum(pts[None, :, 1] - z_hi, z_lo - pts[None, :, 1]), 0)
+    clear = np.hypot(dx, dz).min(axis=1) - args.strut / 2     # to the strut surface
+    free = clear >= CLIP_STRUT_MARGIN
+    params, clears = [], []
     for t in tg.clip_targets(n):
-        def contains(g, t=t):
-            return (t - g[0]) % P <= (g[1] - g[0])
-        cand = [g for g in wide if g not in used]
-        if not cand:
-            raise SystemExit("error: not enough wide lattice gaps above the band for the clips")
-        g = next((g for g in cand if contains(g)), None)
-        if g is not None:
-            m = need / 2 / tg.arc
-            q = g[0] + min(max((t - g[0]) % P, m), (g[1] - g[0]) - m)
-        else:
-            g = min(cand, key=lambda g: abs(((g[0] + g[1]) / 2 - t + P / 2) % P - P / 2))
-            q = (g[0] + g[1]) / 2
-        used.add(g); params.append(q % P); widths.append(round((g[1] - g[0]) * tg.arc, 1))
-    stats["clip_gap_widths_mm"] = widths
-    return params
+        ok = free.copy()
+        for c in params:
+            ok &= np.abs((cand - c + L / 2) % L - L / 2) >= 2 * args.clip_width
+        if not ok.any():
+            raise SystemExit("error: not enough free lattice room above the band for the clips")
+        d = np.abs((cand - t * tg.arc + L / 2) % L - L / 2)
+        k = int(np.argmin(np.where(ok, d, np.inf)))
+        params.append(cand[k]); clears.append(round(float(clear[k]), 2))
+    stats["clip_strut_clearance_mm"] = clears
+    return [c / tg.arc for c in params]
 
 
 FOOT_HW, FOOT_STOP_H = 5.0, 3.0   # foot half width along the band; stop height above the foot
@@ -173,23 +192,37 @@ def feet_fields(tg, X2, Y2, params):
     return out
 
 
+def clip_geometry(args, tg):
+    """Radial clip geometry relative to the band centre line at z = 0:
+    r_top  band outer face at the band top (signed lean: narrower for taper < 0),
+    r_wide widest band face below the hook (top for an outward lean, bottom for taper < 0),
+    reach  hook reach past r_top: edge rounding (horizontal) + --clip-hook onto the flat top,
+    r_tip  hook tip, r_arm arm inner face (clears r_wide), defl snap deflection r_wide - r_tip.
+    Rejected: one radius for both (taper -8: the arm then grazed the band's lower edge)."""
+    r_top = tg.band_w / 2 + tg.lean_signed * args.band
+    r_wide = tg.band_w / 2 + max(tg.lean_signed * args.band, 0.0)
+    reach = BAND_EDGE_ROUND * tg.band_w / args.wall + args.clip_hook
+    r_tip = r_top - reach
+    return {"r_top": r_top, "r_wide": r_wide, "reach": reach, "r_tip": r_tip,
+            "r_arm": r_wide + args.clip_clearance, "defl": r_wide - r_tip}
+
+
 def clip_standoff(args, tg):
-    """Standoff giving a clip arm long enough for CLIP_STRAIN_MAX at the full hook reach:
-    strain = 1.5 t y / L^2 and L = standoff + band + BAND_TOP_ALLOWANCE + clearance."""
-    y = BAND_EDGE_ROUND * tg.band_w / args.wall + args.clip_hook
+    """Standoff giving a clip arm long enough for CLIP_STRAIN_MAX at the snap deflection:
+    strain = 1.5 t y / L^2 and L = standoff + band + band_top_allowance + clearance."""
+    y = clip_geometry(args, tg)["defl"]
     L = math.sqrt(1.5 * args.clip_thickness * y / CLIP_STRAIN_MAX)
-    return max(6.0, round(L - args.band - BAND_TOP_ALLOWANCE - args.clip_clearance + 0.05, 1))
+    return max(6.0, round(L - args.band - band_top_allowance(args) - args.clip_clearance + 0.05, 1))
 
 
 def tray_sdf(args, tg, stats, clip_params=()):
     gap, wall, ft, so = args.tray_gap, args.tray_wall, args.tray_floor, args.standoff
     h_tray = ft + so + args.tray_rise
     ct, cc, cw = args.clip_thickness, args.clip_clearance, args.clip_width
-    cy = BAND_EDGE_ROUND * tg.band_w / args.wall + args.clip_hook   # reach past the nominal edge
-    r_bt = tg.band_w / 2 + tg.lean * args.band               # band outer face at its top
+    cg = clip_geometry(args, tg)
     cpts, cnrm = tg.band_at(clip_params) if len(clip_params) else (np.zeros((0, 2)), np.zeros((0, 2)))
-    # the arm must be able to flex outward by the hook depth without touching the tray wall
-    need = r_bt + cc + ct + cy + 0.5
+    # the arm must be able to flex outward by the snap deflection without touching the tray wall
+    need = cg["r_arm"] + ct + cg["defl"] + 0.5
     rs = np.arange(0, 60, 0.05)
     for p, n in zip(cpts, cnrm):
         o_ = tg.outline(p[0] + rs * n[0], p[1] + rs * n[1])
@@ -200,7 +233,7 @@ def tray_sdf(args, tg, stats, clip_params=()):
     # The band top is not flat at nominal --band: the pot's band/floor smooth union (k = 2.0
     # in orchid_pot.build_sdf / orb.build_orb_sdf) lifts it by up to k/4 = 0.5 mm, and strut
     # fillets add more. Measured under the hooks at defaults: 5.46-5.72 mm for a 5 mm band.
-    z_catch = ft + so + args.band + BAND_TOP_ALLOWANCE + cc
+    z_catch = ft + so + args.band + band_top_allowance(args) + cc
     lip_h = 2.0
     g = Grid([-E + o, -E + o, -1.0 + o], [E, E, max(h_tray, z_catch + lip_h) + 1.0], args.voxel)
     X2, Y2 = np.meshgrid(g.ax[0], g.ax[1], indexing="ij")
@@ -220,7 +253,7 @@ def tray_sdf(args, tg, stats, clip_params=()):
     # hook's top is chamfered 45 deg (lead-in when the pot is pushed down); its underside is
     # the catch face, a 1.3 mm overhang that prints without support.
     clips = []
-    r_ai, r_tip = r_bt + cc, r_bt - cy
+    r_ai, r_tip = cg["r_arm"], cg["r_tip"]
     for p, n in zip(cpts, cnrm):
         r_, s_ = local(p, n)
         clips.append((np.maximum(np.abs(r_ - (r_ai + ct / 2)) - ct / 2, np.abs(s_) - cw / 2), r_, np.abs(s_) - cw / 2))
@@ -253,9 +286,10 @@ def tray_sdf(args, tg, stats, clip_params=()):
         L = z_catch - ft                                      # free arm length (floor top -> catch)
         stats["tray"].update({"clips": len(clip_params), "clip_catch_z_mm": round(z_catch, 2),
                               "clip_arm_length_mm": round(L, 1),
-                              "clip_hook_reach_mm": round(cy, 2), "clip_hook_on_flat_mm": args.clip_hook,
+                              "clip_hook_reach_mm": round(cg["reach"], 2), "clip_hook_on_flat_mm": args.clip_hook,
+                              "clip_snap_deflection_mm": round(cg["defl"], 2),
                               # cantilever snap-fit root strain 1.5 t y / L^2 (PETG guideline <= 2 %)
-                              "clip_strain_pct": round(150 * ct * cy / L ** 2, 2)})
+                              "clip_strain_pct": round(150 * ct * cg["defl"] / L ** 2, 2)})
     return g
 
 
@@ -373,43 +407,64 @@ def planter_sdf(args, tg, geom, stats):
     return g
 
 
-def fit_checker(args, n_clips, fp):
-    """extra_checks for finish(): if the pot's STL and report are next to the tray (same
-    --out prefix), verify the fingerprints and the real fit by mesh intersection. Seated:
-    no overlap with the tray (the pot only touches the feet). Clip: lifted 1.5 mm, every
-    hook must catch the band. Missing pot files: skipped, with a note in the report."""
-    pot_stl, pot_rep = args.out + ".stl", args.out + "_report.json"
+def fit_checker(args, kind, fp, zb, clip_xy=()):
+    """extra_checks for finish(): if the pot's STL and report are found (next to the part,
+    or where --from-report points), verify the fingerprints and the real fit by mesh
+    intersection, with the pot at the exact height zb (not the rounded report value).
+    Seated: no overlap. Clip: lifted 1.5 mm, every clip must catch (intersection pieces are
+    assigned to the nearest clip). Planter: the pot also slides in freely (10/30/60 mm
+    above). Missing pot files: skipped, with a note in the report."""
+    prefix = getattr(args, "pot_out", None) or args.out
+    pot_stl, pot_rep = prefix + ".stl", prefix + "_report.json"
 
-    def check(tray, stats):
+    def check(part, stats):
         if not (os.path.exists(pot_stl) and os.path.exists(pot_rep)):
-            stats["fit_check"] = {"ok": None, "note": f"skipped: no pot STL/report at {args.out}.*"}
+            stats["fit_check"] = {"ok": None, "note": f"skipped: no pot STL/report at {prefix}.*"}
             return
-        pfp = json.load(open(pot_rep)).get("fingerprint", {})
+        with open(pot_rep) as fh:
+            pfp = json.load(fh).get("fingerprint")
+        if pfp is None:
+            stats["fit_check"] = {"ok": False, "note": f"{pot_rep} has no fingerprint (pot built "
+                                                       f"before v0.7.2): rebuild the pot"}
+            return
         bad = [k for k in fp if pfp.get(k) != fp[k]]
         if bad:
-            stats["fit_check"] = {"ok": False, "note": f"pot does not match this tray ({', '.join(bad)} "
+            stats["fit_check"] = {"ok": False, "note": f"pot does not match this part ({', '.join(bad)} "
                                                        f"fingerprint differs); use --from-report {pot_rep}"}
             return
         pot = trimesh.load(pot_stl)
-        zb = stats.get("tray", stats.get("planter"))["pot_bottom_z_mm"]
 
         def overlap(dz):
             p = pot.copy(); p.apply_translation([0, 0, zb + dz])
-            i = trimesh.boolean.intersection([p, tray], engine="manifold")
-            return (float(i.volume), len(i.split(only_watertight=False))) if len(i.faces) else (0.0, 0)
-        seated = overlap(0.02)
-        res = {"seated_overlap_mm3": round(seated[0], 2)}
-        ok = seated[0] <= 0.05
-        if n_clips == "planter":                              # the pot must slide in freely
+            i = trimesh.boolean.intersection([p, part], engine="manifold")
+            return (float(i.volume), i.split(only_watertight=False)) if len(i.faces) else (0.0, [])
+        seated = overlap(0.02)[0]
+        res = {"seated_overlap_mm3": round(seated, 2)}
+        ok = seated <= 0.05
+        if kind == "planter":
             ins = [overlap(dz)[0] for dz in (10.0, 30.0, 60.0)]
             res["insertion_overlap_mm3_at_10/30/60mm"] = [round(v, 2) for v in ins]
             ok = ok and max(ins) <= 0.05
-        elif n_clips:
-            lifted = overlap(1.5)
-            res.update({"lifted_1.5mm_hooks_engaged": lifted[1], "clips": n_clips})
-            ok = ok and lifted[1] >= n_clips
+        elif kind == "clip":
+            cxy = np.asarray(clip_xy)
+            hit = {int(np.argmin(np.linalg.norm(cxy - q.centroid[:2], axis=1))) for q in overlap(1.5)[1]}
+            res.update({"lifted_1.5mm_clips_engaged": len(hit), "clips": len(cxy)})
+            ok = ok and len(hit) == len(cxy)
         stats["fit_check"] = {"ok": ok, **res}
     return check
+
+
+def report_fit(stats, out, part):
+    """A part that fails the fit check is not left on disk as a printable STL."""
+    fc = stats["fit_check"]
+    if fc["ok"] is False:
+        if os.path.exists(out + ".stl"):
+            os.remove(out + ".stl")
+        raise SystemExit(f"error: {part} does not fit the pot ({out}.stl removed, report kept): {fc}")
+    if fc["ok"] is None and stats.get("tray", {}).get("clips"):
+        print("WARNING: clip tray not checked against the pot (pot files not found); placement "
+              "comes from the strut paths, the band-top height is calibrated, not measured")
+    print("fit check:", fc)
 
 
 def _with_height(a, args):
@@ -434,11 +489,11 @@ def run(args, parts, geom, struts=None):
         cp = place_clips(tg, args, struts, stats) if args.tray == "clip" else ()
         g = tray_sdf(a, tg, stats, cp)
         print(f"tray sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
-        finish(g, a, stats, t0, extra_checks=fit_checker(args, len(cp), fp))
-        fc = stats["fit_check"]
-        if fc["ok"] is False:
-            raise SystemExit(f"error: tray does not fit the pot {args.out}.stl: {fc}")
-        print("fit check:", fc)
+        pts, nrm = tg.band_at(cp) if len(cp) else (np.zeros((0, 2)), np.zeros((0, 2)))
+        clip_xy = pts + nrm * (tg.band_w / 2 + args.clip_clearance)
+        finish(g, a, stats, t0, extra_checks=fit_checker(args, "clip" if len(cp) else "saucer", fp,
+                                                         a.tray_floor + a.standoff, clip_xy))
+        report_fit(stats, a.out, "tray")
     if "planter" in parts:
         a = copy.copy(args)
         a.out, a.height, a.eyelets = args.out + "_planter", 1e6, 0
@@ -446,8 +501,6 @@ def run(args, parts, geom, struts=None):
         stats = {"params": vars(a), "part": "planter", "fingerprint": fp}
         g = planter_sdf(_with_height(a, args), tg, geom, stats)
         print(f"planter sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
-        finish(g, a, stats, t0, extra_checks=fit_checker(args, "planter", fp))
-        fc = stats["fit_check"]
-        if fc["ok"] is False:
-            raise SystemExit(f"error: planter does not fit the pot {args.out}.stl: {fc}")
-        print("fit check:", fc)
+        zb = a.planter_floor + (6.0 if a.standoff is None else a.standoff)
+        finish(g, a, stats, t0, extra_checks=fit_checker(args, "planter", fp, zb))
+        report_fit(stats, a.out, "planter")

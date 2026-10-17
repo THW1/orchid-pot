@@ -7,7 +7,8 @@
 #              helpers without importing or touching the box/cylinder pipeline. Later
 #              additions shared by both pipelines: grade_fraction, floor_field,
 #              require_rim_crossings (v0.6.1), finish(extra_checks=...) and the STL round
-#              trip check of every decimation candidate (v0.7.1, stl_roundtrip_ok).
+#              trip check of every decimation candidate (v0.7.1, stl_roundtrip /
+#              export_safe).
 #              Behaviour changes here affect every shape: run tests/ (byte-identical
 #              goldens for box and cylinder).
 # Related:     Used by orchid_pot.py (box, cylinder) and orb.py.
@@ -301,11 +302,6 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
     return out
 
 
-# CTX: Common tail of every pipeline: mesh -> decimate (one milder retry) -> checks ->
-#      write. extra_checks runs after check_mesh and before writing, so its stats land in
-#      the report.
-# Used-by: orchid_pot.py::main, orb.py::run
-# Invariant: g.D is released before decimation; callers must not use the grid afterwards.
 # Parameters that set the pot's outline, band and band-top height (what a tray sits on).
 SHAPE_KEYS = ("shape", "size", "corner_r", "diameter", "taper", "height", "stretch",
               "min_wall_angle", "wall", "band", "rim", "floor", "fillet")
@@ -324,10 +320,11 @@ def fingerprint(args, struts=None):
     return out
 
 
-def stl_roundtrip_ok(mesh):
-    """True if the mesh is still watertight after binary STL export + reload."""
+def stl_roundtrip(mesh):
+    """(ok, reloaded): the mesh after binary STL export + reload, and whether it is still
+    watertight."""
     back = trimesh.load(io.BytesIO(mesh.export(file_type="stl")), file_type="stl")
-    return bool(back.is_watertight)
+    return bool(back.is_watertight), back
 
 
 def export_safe(mesh, stats):
@@ -335,18 +332,23 @@ def export_safe(mesh, stats):
     that merge in float32 split off zero-volume two-triangle slivers; seen on box --seed 3),
     use the round-tripped mesh without those slivers. Meshes that pass stay untouched, so
     outputs that were fine do not change. None if no watertight STL can be had."""
-    if stl_roundtrip_ok(mesh):
+    ok, back = stl_roundtrip(mesh)
+    if ok:
         return mesh
-    back = trimesh.load(io.BytesIO(mesh.export(file_type="stl")), file_type="stl")
     parts = back.split(only_watertight=False)
     keep = [q for q in parts if abs(q.volume) >= 1.0]
     fixed = clean(trimesh.util.concatenate(keep))
-    if fixed.is_watertight and stl_roundtrip_ok(fixed):
+    if fixed.is_watertight and stl_roundtrip(fixed)[0]:
         stats["stl_slivers_removed"] = stats.get("stl_slivers_removed", 0) + len(parts) - len(keep)
         return fixed
     return None
 
 
+# CTX: Common tail of every pipeline: mesh -> decimate (one milder retry) -> checks ->
+#      write. extra_checks runs after check_mesh and before writing, so its stats land in
+#      the report.
+# Used-by: orchid_pot.py::main, orb.py::run
+# Invariant: g.D is released before decimation; callers must not use the grid afterwards.
 def finish(g, args, stats, t0, extra_checks=None):
     """Mesh the SDF grid, decimate, check, write <out>.stl and <out>_report.json.
     extra_checks(mesh, stats): optional shape-specific checks (orb: stability)."""
@@ -356,6 +358,7 @@ def finish(g, args, stats, t0, extra_checks=None):
     # quadric decimation occasionally leaves a non-manifold spot; retry milder once. The
     # candidate must also survive the STL round trip: float32 export can collapse a sliver
     # that is fine in memory (seen on a clip tray: watertight in memory, not after reload).
+    cand = None
     for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
         dec = clean(trimesh.Trimesh(v, f, process=True))
@@ -366,8 +369,10 @@ def finish(g, args, stats, t0, extra_checks=None):
             break
     else:
         stats["decimation_skipped"] = "result not watertight (after STL round trip) or disabled"
-        mesh = export_safe(mesh, stats) or mesh
-    stats["stl_roundtrip_watertight"] = stl_roundtrip_ok(mesh)
+        cand = export_safe(mesh, stats)
+        mesh = cand if cand is not None else mesh
+    # export_safe verified every accepted mesh; only a total failure leaves False here
+    stats["stl_roundtrip_watertight"] = cand is not None
     check_mesh(mesh, args, stats)
     if extra_checks:
         extra_checks(mesh, stats)

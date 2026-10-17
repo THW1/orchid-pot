@@ -4,7 +4,8 @@
 #              experimental orb shape or shared helpers are added.
 # Decisions:   Compares the STL byte hash and the full JSON report (minus `params`, which
 #              holds the output path) for seed 7. The pipeline is deterministic, so any
-#              difference is a real change. The box hash equals the v0.4.0 release STL.
+#              difference is a real change. Goldens last regenerated for the intended v0.6.1
+#              gusset change (later only report fields were added, STLs unchanged).
 # Constraints: About 30 s per case (full mesh build).
 # Related:     tests/golden/*_report.json, tests/golden/stl.sha256; regenerate them only
 #              for an intended output change, and say so in the commit message.
@@ -81,7 +82,7 @@ def test_tray_refuses_foreign_pot_and_from_report(tmp_path):
     good = run("box", "--from-report", str(pot) + "_report.json", "--parts", "tray", "--tray", "clip")
     assert good.returncode == 0
     fc = json.loads((tmp_path / "pot_tray_clip_report.json").read_text())["fit_check"]
-    assert fc["ok"] and fc["seated_overlap_mm3"] <= 0.05 and fc["lifted_1.5mm_hooks_engaged"] == 4
+    assert fc["ok"] and fc["seated_overlap_mm3"] <= 0.05 and fc["lifted_1.5mm_clips_engaged"] == 4
 
 
 def test_planter_box_fits_repo_pot(tmp_path):

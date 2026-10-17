@@ -550,3 +550,4 @@ def run(args):
     g = build_orb_sdf(args, sh, polys, gaps, fsegs, stats)
     print(f"sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
     finish(g, args, stats, t0, extra_checks=stability(sh))
+    return polys                               # the clip tray reuses the strut paths

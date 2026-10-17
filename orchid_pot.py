@@ -204,6 +204,8 @@ def parse_args(argv=None):
     if args.planter_eyelets == 1 or args.planter_eyelets < 0 or \
             (args.shape == "box" and args.planter_eyelets not in (0, 2, 4)):
         p.error("--planter-eyelets: 0 or >= 2 (box: 0, 2 or 4)")
+    if args.tray == "clip" and args.clips is not None and args.clips < 2:
+        p.error("--clips must be >= 2")
     if args.standoff is not None and args.standoff < 2:
         p.error("--standoff must be >= 2 mm (water line stays 1 mm below the pot bottom)")
     if args.out is None:
@@ -218,17 +220,21 @@ RUN_KEYS = {"shape", "out", "parts", "graph_only", "from_report", "eyelets_defau
 def apply_report(p, args):
     """Overwrite all pot parameters with those of the pot's report. Accessory options
     (--tray*, --standoff, --clip*, --planter*) and run options stay as given."""
-    import json as _json
     try:
-        rp = _json.load(open(args.from_report))["params"]
+        with open(args.from_report) as fh:
+            rep = json.load(fh)
+        rp = rep["params"]
     except (OSError, ValueError, KeyError) as e:
         p.error(f"--from-report: cannot read pot parameters from {args.from_report}: {e}")
+    if "part" in rep:        # tray/planter reports park height = 1e6 etc. for potlib
+        p.error(f"--from-report: {args.from_report} is a {rep['part']} report; pass the pot's report")
     if rp.get("shape") != args.shape:
         p.error(f"--from-report: report is for shape '{rp.get('shape')}', not '{args.shape}'")
     acc = lambda k: k.startswith(("tray", "clip", "planter")) or k == "standoff"
     for k, v in rp.items():
         if hasattr(args, k) and k not in RUN_KEYS and not acc(k):
             setattr(args, k, v)
+    args.pot_out = rp["out"]        # where the fit check finds the pot, whatever --out says
     if args.out is None:
         args.out = rp["out"]
 
@@ -766,8 +772,7 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
 
 def main():
     args = parse_args()
-    if "pot" in args.parts:
-        build_pot(args)
+    polys = build_pot(args) if "pot" in args.parts else None
     acc = [p for p in args.parts if p != "pot"]
     if acc and not args.graph_only:            # accessories: own module, pot code untouched
         import accessories
@@ -776,8 +781,8 @@ def main():
             geom = orb.OrbShape(args)
         else:
             geom = make_frame(args)
-        struts = None
-        if args.tray == "clip":                # clips go into lattice openings above the band
+        struts = polys if args.tray == "clip" else None
+        if args.tray == "clip" and struts is None:   # clips go into lattice gaps above the band
             rng = np.random.default_rng(args.seed)
             if args.shape == "orb":
                 struts = orb.orb_graph(args, geom, rng, {})
@@ -804,6 +809,7 @@ def build_pot(args):
     g = build_sdf(args, fr, polys, gussets, fsegs, stats)
     print(f"sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
     finish(g, args, stats, t0)
+    return polys                               # the clip tray reuses the strut paths
 
 
 if __name__ == "__main__":

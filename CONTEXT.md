@@ -70,9 +70,11 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
   the pot report and compared by `accessories.py::fit_checker` (shape; for clip trays
   also pattern). `orchid_pot.py::apply_report` (`--from-report`) copies a pot's
   parameters, except the `RUN_KEYS` and accessory options.
-- `accessories.py::BAND_TOP_ALLOWANCE` / `BAND_EDGE_ROUND` mirror the pot's band/floor
-  smooth union (k = 2.0) and band edge rounding (1.5 mm) in `orchid_pot.py::build_sdf`
-  and `orb.py::build_orb_sdf`; change them together.
+- `accessories.py::band_top_allowance` / `BAND_EDGE_ROUND` mirror the pot's band/floor
+  smooth union (k = 2.0, plus fillets) and band edge rounding (1.5 mm) in
+  `orchid_pot.py::build_sdf` and `orb.py::build_orb_sdf`; change them together.
+- `orchid_pot.py::build_pot` / `orb.py::run` return the strut paths; `main` hands them to
+  the clip tray (no second graph build).
 - `orb.py` → `potlib.py` only. The orb never imports `orchid_pot.py`, and
   `orchid_pot.py` imports `orb` only for the `orb` subcommand.
 - `orb.py::run` sets `args.height` to the derived rim height before the potlib checks,
