@@ -141,7 +141,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--standoff` | saucer 6, clip auto (~10–12) | 4–8 (saucer) | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm. Clip: chosen so the arm stays ≤ 2 % strain |
 | `--tray-rise` | 4 | 2–8 | Tray wall height above the pot bottom |
 | `--planter-gap` | 8 | 6–12 | Gap between the pot and the planter's inner wall |
-| `--planter-wall` | 2.4 | 2.0–3.0 | Planter wall thickness, measured normal to the wall |
+| `--planter-wall` | 2.0 | 1.7–2.4 | Planter wall thickness, measured normal to the wall. 2.0 mm is about 5 lines at 0.42 mm, the upper end of the 4–5 perimeters for watertight walls |
 | `--planter-floor` | 2.0 | 1.6–2.4 | Planter floor thickness |
 | `--planter-ribs` | 4 | 3–4 | Vertical centring ribs inside (45° lead-in at the top) |
 | `--planter-rib-clearance` | 1.0 | 0.5–1.5 | Clearance between ribs and pot |
@@ -173,8 +173,8 @@ could not be assembled.
   gives a straight cylinder.
 - **Inside:** the pot stands on the same feet as in the tray (6 mm standoff, 5 mm water
   reservoir) and is centred by ribs with 1 mm clearance.
-- **Defaults:** box about 290 g / 132 ml reservoir, cylinder about 245 g / 105 ml, orb bowl
-  about 147 g / 66 ml.
+- **Defaults:** box about 256 g / 132 ml reservoir, cylinder about 215 g / 105 ml, orb bowl
+  about 130 g / 66 ml.
 - **Fit check:** like the tray, plus a sliding-in test (no overlap 10, 30 and 60 mm above
   the end position). A closed planter keeps air from the roots; use it only for less
   demanding plants.

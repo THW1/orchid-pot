@@ -127,7 +127,8 @@ def parse_args(argv=None):
                         "2 %% strain limit, about 10-11)")
     g.add_argument("--tray-rise", type=float, default=4.0, help="tray wall above the pot bottom [mm]")
     g.add_argument("--planter-gap", type=float, default=8.0, help="gap pot -> planter inner wall [mm]")
-    g.add_argument("--planter-wall", type=float, default=2.4, help="planter wall thickness [mm]")
+    g.add_argument("--planter-wall", type=float, default=2.0,
+                   help="planter wall thickness [mm] (2.0 = ~5 lines at 0.42 mm: watertight range)")
     g.add_argument("--planter-floor", type=float, default=2.0, help="planter floor thickness [mm]")
     g.add_argument("--planter-ribs", type=int, default=4, help="centring ribs inside the planter")
     g.add_argument("--planter-rib-clearance", type=float, default=1.0, help="rib-to-pot clearance [mm]")
