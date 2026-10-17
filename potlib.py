@@ -307,6 +307,10 @@ SHAPE_KEYS = ("shape", "size", "corner_r", "diameter", "taper", "height", "stret
               "min_wall_angle", "wall", "band", "rim", "floor", "fillet")
 
 
+# CTX: Pot identity for accessories. 'pattern' hashes the strut paths, not parameters, so it
+#      also catches library-version changes. SHAPE_KEYS must list every parameter that moves
+#      the outline, band or band top, or a mismatched tray would pass.
+# Used-by: orchid_pot.py::build_pot, orb.py::run, accessories.py::run
 def fingerprint(args, struts=None):
     """Identity of a pot as seen by its accessories: 'shape' hashes SHAPE_KEYS (orb: without
     the derived height); 'pattern' hashes the strut paths themselves (rounded to 1 um), so

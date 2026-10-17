@@ -218,6 +218,10 @@ def parse_args(argv=None):
 RUN_KEYS = {"shape", "out", "parts", "graph_only", "from_report", "eyelets_default"}
 
 
+# CTX: --from-report: copies every pot parameter except RUN_KEYS and accessory options,
+#      recognised by prefix (tray*, clip*, planter*, standoff). New accessory options must use
+#      such a prefix, or a report would silently overwrite them.
+# Used-by: orchid_pot.py::parse_args | Depends: accessories.py::fit_checker (args.pot_out)
 def apply_report(p, args):
     """Overwrite all pot parameters with those of the pot's report. Accessory options
     (--tray*, --standoff, --clip*, --planter*) and run options stay as given."""

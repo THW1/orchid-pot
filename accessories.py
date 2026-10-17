@@ -59,6 +59,7 @@ def band_top_allowance(args):
 
 
 CLIP_STRUT_MARGIN = 1.5        # mm between a clip and a strut surface (covers the strut fillet)
+CLIP_LIP_H = 2.0               # hook (lip) height above its catch face: geometry and clearance check
 # The band's outer top edge is rounded with r = 1.5 mm in the wall's normal direction
 # (rounded_box2 in orchid_pot.build_sdf and orb.build_orb_sdf); horizontally that is
 # 1.5 * band_w / wall (orb at 55 deg: 1.83 mm). A hook that only reaches the rounding acts as
@@ -67,6 +68,10 @@ BAND_EDGE_ROUND = 1.5
 CLIP_STRAIN_MAX = 0.02         # PETG cantilever snap-fit guideline 1.5-2 %
 
 
+# CTX: Read-only adapter from the three pot shapes to what accessories need; the only place
+#      that knows the pots' internals. Band parameter: box = arc length u, round = angle.
+# Used-by: accessories.py::place_clips, accessories.py::feet_fields, accessories.py::tray_sdf, accessories.py::planter_sdf
+# Depends: orchid_pot.py::BoxFrame, orchid_pot.py::ConeFrame, orb.py::OrbShape (attributes)
 class TrayGeometry:
     """Read-only view of a pot shape for accessories: outline SDF of the vertical
     projection, the band centre line at z = 0 as a periodic parameter (box: arc length u
@@ -136,6 +141,9 @@ def strut_chart(tg, struts, step=0.25):
     return np.vstack(out)
 
 
+# CTX: Clip positions from the pot's own strut paths (same seed); must agree with the hook
+#      region tray_sdf builds (catch height band_top_allowance + clearance, CLIP_LIP_H).
+# Used-by: accessories.py::run | Depends: orchid_pot.py::wall_graph, orb.py::orb_graph (paths)
 def place_clips(tg, args, struts, stats):
     """Clip parameters. A position is free if the clip's hook region (its width along the
     band x the hook's height range) keeps CLIP_STRUT_MARGIN from every strut surface, i.e.
@@ -146,7 +154,7 @@ def place_clips(tg, args, struts, stats):
     mm of height, so they could cut into the hook)."""
     n = args.clips if args.clips is not None else (4 if tg.shape == "box" else 3)
     z_lo = args.band + band_top_allowance(args) + args.clip_clearance
-    z_hi = z_lo + 2.0                                         # hook (lip) height, see tray_sdf
+    z_hi = z_lo + CLIP_LIP_H
     need = args.strut / 2 + CLIP_STRUT_MARGIN
     pts = strut_chart(tg, struts)
     pts = pts[(pts[:, 1] > z_lo - need - 1) & (pts[:, 1] < z_hi + need + 1)]
@@ -234,7 +242,7 @@ def tray_sdf(args, tg, stats, clip_params=()):
     # in orchid_pot.build_sdf / orb.build_orb_sdf) lifts it by up to k/4 = 0.5 mm, and strut
     # fillets add more. Measured under the hooks at defaults: 5.46-5.72 mm for a 5 mm band.
     z_catch = ft + so + args.band + band_top_allowance(args) + cc
-    lip_h = 2.0
+    lip_h = CLIP_LIP_H
     g = Grid([-E + o, -E + o, -1.0 + o], [E, E, max(h_tray, z_catch + lip_h) + 1.0], args.voxel)
     X2, Y2 = np.meshgrid(g.ax[0], g.ax[1], indexing="ij")
     d = tg.outline(X2, Y2)                                   # < 0 inside the pot projection
@@ -407,6 +415,9 @@ def planter_sdf(args, tg, geom, stats):
     return g
 
 
+# CTX: The automatic proof that a part fits its pot; refuses a pot with another fingerprint.
+# Depends: potlib.py::fingerprint (written into the pot report by build_pot / orb.run)
+# Invariant: zb is the exact pot-bottom height; the rounded report value caused false failures.
 def fit_checker(args, kind, fp, zb, clip_xy=()):
     """extra_checks for finish(): if the pot's STL and report are found (next to the part,
     or where --from-report points), verify the fingerprints and the real fit by mesh

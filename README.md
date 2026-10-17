@@ -162,7 +162,7 @@ into lattice openings and sit on the flat band top.
 feet; when lifted 0.6–1.2 mm, all hooks engage. Arm strain is about 2 % (PETG snap-fit
 guideline 1.5–2 %). To remove the tray, bend the arms outward one by one. The clearance
 is an estimate: print a test tray first [UNVERIFIED] and adjust `--clip-clearance`.
-Defaults: box about 218 ml / 98 g, cylinder about 172 ml / 83 g, orb about 187 ml / 84 g.
+Defaults: box about 218 ml / 98 g, cylinder about 171 ml / 84 g, orb about 187 ml / 84 g.
 
 **Planter (`--parts planter`, decorative):** a closed outer pot. Box and cylinder planters
 are flush with the pot rim; the orb gets a bowl up to its belly, because a closed onion
