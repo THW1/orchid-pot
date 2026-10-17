@@ -44,3 +44,14 @@ def test_orb_graph_smoke():
     assert stats["removed_unsupported_or_leaf_nodes"] == 0
     assert stats["strut_clearance_violations"] == 0
     assert stats["wall_metrics"]["inscribed_dia_mm_p50/p90/max"][2] < 35
+
+
+@pytest.mark.parametrize("shape", ["box", "orb"])
+def test_tray_saucer_checks(shape, tmp_path):
+    """Accessory tray (no golden yet): one watertight body, no islands, holds water."""
+    out = tmp_path / shape
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), shape, "--parts", "tray", "--out", str(out)],
+                   check=True, capture_output=True)
+    r = json.loads((tmp_path / f"{shape}_tray_report.json").read_text())
+    assert r["watertight"] and r["bodies"] == 1 and r["unsupported_islands"] == 0
+    assert r["tray"]["water_capacity_ml"] >= 80

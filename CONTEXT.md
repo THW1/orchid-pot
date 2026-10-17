@@ -1,5 +1,5 @@
 # Project context: orchid-pot
-Verified-at: v0.6.1 (git tag)
+Verified-at: v0.7.0 (git tag)
 
 ## Purpose
 This project generates printable STLs of Voronoi orchid baskets and pots for PETG with a
@@ -14,6 +14,7 @@ orchid_pot.py           CLI + box/cylinder pipeline: frame → strut graph → S
 potlib.py               shape-independent helpers: SDF primitives, Poisson, Grid, floor, metrics,
                         meshing, checks, finish() (mesh → decimate → check → write)
 orb.py                  EXPERIMENTAL orb pipeline (sphere Voronoi, 3D printability, shell SDF)
+accessories.py          optional separate parts: drip tray (saucer); reads pot geometry read-only
 render.py               Blender (headless, Cycles) preview renders of an STL
 tests/test_regression.py  byte-identical STL + report for box, cylinder, cylinder --taper 8;
                         orb strut-graph smoke test
@@ -25,9 +26,9 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 `preview_<shape>_*.png`.
 
 ## Flow
-1. `orchid_pot.py::main` → `parse_args` (subcommand = shape). For `orb` it imports
-   `orb` and hands over to `orb.py::run`. Otherwise `make_frame` returns a `BoxFrame`
-   or `ConeFrame`.
+1. `orchid_pot.py::main` → `parse_args` (subcommand = shape) → `build_pot` if `pot` is in
+   `--parts`. For `orb` it hands over to `orb.py::run`; otherwise `make_frame` returns a
+   `BoxFrame` or `ConeFrame`. Other parts then go to `accessories.py::run`.
 2. `wall_graph`: 2D Voronoi on the unrolled wall, lift, classify, arches. Its output feeds
    `wall_metrics` and `rim_gussets` (the gap list).
 3. `floor_segments`: 2D Voronoi of the floor, clipped by `footprint_sdf`.
@@ -58,6 +59,9 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `potlib.py::floor_field`, `potlib.py::grade_fraction`, `potlib.py::finish` are shared
   by `orchid_pot.py::build_sdf` / `orchid_pot.py::wall_graph` / `orchid_pot.py::main`
   and the matching orb functions.
+- `accessories.py::TrayGeometry` reads `BoxFrame` (map, quad, side, r, c, half_out),
+  `ConeFrame` (r_out, r_mid, H, cos_t, tan_t) and `orb.py::OrbShape` (a_out, r_floor).
+  Renaming those attributes breaks the tray, and the tray tests catch it.
 - `orb.py` → `potlib.py` only. The orb never imports `orchid_pot.py`, and
   `orchid_pot.py` imports `orb` only for the `orb` subcommand.
 - `orb.py::run` sets `args.height` to the derived rim height before the potlib checks,

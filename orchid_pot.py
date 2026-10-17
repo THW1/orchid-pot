@@ -46,8 +46,10 @@
 #              The voxel grid at 0.4 mm is ~45M float32 (~180 MB); peak RSS ~1.3 GB,
 #              ~30 s on 6 cores. The grid grows with 1/voxel^3.
 # Related:     potlib.py holds the shape-independent helpers (meshing, checks, floor,
-#              metrics). render.py renders the STL. README.md documents the CLI; its
-#              options tables mirror parse_args, so the two change together.
+#              metrics). accessories.py builds the optional tray from the frames
+#              (read-only), imported only for --parts other than pot. render.py renders
+#              the STL. README.md documents the CLI; its options tables mirror
+#              parse_args, so the two change together.
 # Invariants:  The band/rim mirror lines sit inside the band/rim solids; edges on them
 #              are anchors only and are not drawn. Grid origin has an odd offset, so no
 #              sample lands on a flat face (zero-area marching-cubes slivers otherwise).
@@ -109,6 +111,15 @@ def parse_args(argv=None):
     g.add_argument("--grade-scale", type=float, default=0.6, help="cell size factor at the rim")
     g.add_argument("--merge", type=float, default=3.0, help="merge Voronoi nodes closer than this [mm]")
     g.add_argument("--layer", type=float, default=0.2, help="layer height for island check [mm]")
+    g = common.add_argument_group("accessories (separate prints, see accessories.py)")
+    g.add_argument("--parts", default="pot",
+                   help="comma list of parts to build: pot, tray (default: pot)")
+    g.add_argument("--tray", choices=["saucer"], default="saucer", help="tray type")
+    g.add_argument("--tray-gap", type=float, default=3.0, help="gap pot outline -> tray wall [mm]")
+    g.add_argument("--tray-wall", type=float, default=2.4, help="tray wall thickness [mm]")
+    g.add_argument("--tray-floor", type=float, default=2.0, help="tray floor thickness [mm]")
+    g.add_argument("--standoff", type=float, default=6.0, help="pot bottom above the tray floor [mm]")
+    g.add_argument("--tray-rise", type=float, default=4.0, help="tray wall above the pot bottom [mm]")
     g = common.add_argument_group("mesh")
     g.add_argument("--voxel", type=float, default=0.4, help="SDF grid pitch [mm]")
     g.add_argument("--decimate", type=float, default=0.75, help="fraction of triangles to remove")
@@ -166,6 +177,11 @@ def parse_args(argv=None):
                     "that almost no strut direction stays printable near floor and opening")
         if not 0.6 <= args.stretch <= 2.0:
             p.error("orb: --stretch must be in [0.6, 2.0]")
+    args.parts = [s.strip() for s in args.parts.split(",") if s.strip()]
+    if not args.parts or set(args.parts) - {"pot", "tray"}:
+        p.error("--parts takes a comma list of: pot, tray")
+    if args.standoff < 2:
+        p.error("--standoff must be >= 2 mm (water line stays 1 mm below the pot bottom)")
     if args.out is None:
         args.out = f"orchid_{args.shape}"
     return args
@@ -704,6 +720,20 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
 
 def main():
     args = parse_args()
+    if "pot" in args.parts:
+        build_pot(args)
+    acc = [p for p in args.parts if p != "pot"]
+    if acc and not args.graph_only:            # accessories: own module, pot code untouched
+        import accessories
+        if args.shape == "orb":
+            import orb
+            geom = orb.OrbShape(args)
+        else:
+            geom = make_frame(args)
+        accessories.run(args, acc, geom)
+
+
+def build_pot(args):
     if args.shape == "orb":                    # experimental, kept out of this module
         import orb
         return orb.run(args)

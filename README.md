@@ -50,6 +50,8 @@ python3 orchid_pot.py cylinder --taper 12 --eyelets 0  # standing pot, no eyelet
 python3 orchid_pot.py orb                              # onion, 150 mm belly (~95 s, ~2.4 GB)
 python3 orchid_pot.py box --seed 3 --out pot_s3        # another random pattern, other file names
 python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~2 s), no mesh
+python3 orchid_pot.py cylinder --parts pot,tray        # pot + drip tray (saucer)
+python3 orchid_pot.py box --parts tray                 # only the tray (~5 s), pot unchanged
 python3 orchid_pot.py cylinder --help                  # options for that shape
 blender -b --factory-startup --python render.py -- $PWD/orchid_box.stl $PWD/preview_box
 ```
@@ -122,6 +124,24 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--out` | `orchid_<shape>` | – | Output file prefix |
 | `--graph-only` | off | – | Stop after the pattern and its metrics |
 
+### Accessories (separate prints, all shapes)
+
+| Option | Default | Recommended | Meaning |
+|---|---|---|---|
+| `--parts` | `pot` | `pot`, `tray`, `pot,tray` | Parts to build. Each writes its own STL + report, e.g. `orchid_box_tray.stl` |
+| `--tray` | `saucer` | – | Tray type. The clip-on variant for hanging pots follows |
+| `--tray-gap` | 3 | 2–5 | Gap between the pot's outline (widest at any height) and the tray wall |
+| `--tray-wall` | 2.4 | 2.0–3.0 | Tray wall thickness (about 6 lines for watertight walls) |
+| `--tray-floor` | 2.0 | 1.6–2.4 | Tray floor thickness |
+| `--standoff` | 6 | 4–8 | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm |
+| `--tray-rise` | 4 | 2–8 | Tray wall height above the pot bottom |
+
+The pot stands on 8 feet under its solid bottom band, not under the floor lattice, so
+drainage stays open. Each foot has an outer stop, which leaves about 1 mm side play. The
+water line stays 1 mm below the pot bottom. Capacities with defaults: box about 117 ml,
+cylinder/orb about 92–93 ml. For the orb the tray is belly-wide, because drips also fall
+from the belly. The report gives `tray.pot_bottom_z_mm` and `tray.water_capacity_ml`.
+
 ### Effect of `--zstretch` (box, seed 7, other options default)
 
 | zstretch | Nodes lifted | Struts kept flat | Opening height p90 / max | Largest opening (inscribed) |
@@ -151,7 +171,8 @@ python3 -m pytest -q tests/     # ~100 s
 The tests check that box, cylinder and cylinder `--taper 8` (seed 7) give byte-identical
 STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 release.
 Regenerate the golden files only for an intended output change. The experimental orb has
-only a smoke test of its strut graph.
+only a smoke test of its strut graph; the trays (box, orb) are checked for one watertight
+body, no islands and at least 80 ml capacity.
 
 ## Report (`<out>_report.json`)
 
@@ -178,6 +199,10 @@ showed no warning there.
 - Print upright on the floor, without supports. Optionally paint support on any strut
   listed under `cantilevers`.
 - Lattices string easily with PETG, so tune retraction and travel.
+- Trays need watertight settings, separate from the lattice: 4–5 perimeters, about
+  102–105 % flow, about 240–245 °C, dried PETG
+  ([Prusa](https://blog.prusa3d.com/watertight-3d-printing-part-2_53638/),
+  [All3DP](https://all3dp.com/2/watertight-3d-print-tutorial/)).
 - The weight with defaults is about 210–220 g (box) and about 170 g (cylinder, orb);
   the slicer gives the exact value.
 
