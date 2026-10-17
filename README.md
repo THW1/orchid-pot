@@ -73,8 +73,8 @@ outside them work, but check the report.
 | `cylinder` | `--diameter` | 150 | – | Outer diameter at the rim |
 | `cylinder` | `--taper` | 0 | −15…+15 | Wall lean from vertical in degrees; > 0 widens upward. Limit ±20 |
 | `orb` | `--diameter` | 150 | – | Outer diameter at the belly |
-| `orb` | `--stretch` | 1.2 | 1.0–1.4 | Height/width ratio of the ellipsoid; 1 = sphere |
-| `orb` | `--min-wall-angle` | 55 | 50–60 | Wall angle from horizontal where floor and opening are cut |
+| `orb` | `--stretch` | 1.2 | 1.0–1.4 | Height/width ratio of the ellipsoid; 1 = sphere. Allowed 0.6–2.0 |
+| `orb` | `--min-wall-angle` | 55 | 50–60 | Wall angle from horizontal where floor and opening are cut. Allowed 45–80 |
 
 At `--taper 8` the floor diameter is 121.9 mm; at `--taper 15` it is 96.4 mm (for a
 150 mm rim, 100 mm height).
@@ -95,7 +95,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
 | `--height` | 100 | – | Body height; the eyelets add about 11 mm (box, cylinder) |
-| `--eyelets` | box 4, cylinder/orb 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 4 = at the corners |
+| `--eyelets` | box 4, cylinder/orb 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 0, 2 or 4 (corners) |
 | `--wall` | 5 | 4–6 | Wall thickness |
 | `--strut` | 4.5 | 4–5 | Wall strut width (about 10 lines at 0.42 mm) |
 | `--edge-round` | 1.0 | 0.5–1.5 | Rounding of the strut face edges |
@@ -104,7 +104,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--min-angle` | 35 | 35–40 | Minimum strut angle from horizontal that counts as printable |
 | `--max-bridge` | 10 | 6–10 | Flat struts up to this horizontal span stay flat; longer ones become pointed arches |
 | `--max-arch` | 25 | 20–25 | Wider shallow struts are not arched (kept as flat bridges) |
-| `--grade-top` | 0.25 | 0.2–0.3 | Top fraction of the height where cells shrink toward the rim; 0 = off |
+| `--grade-top` | 0.25 | 0.2–0.3 | Top fraction of the height where cells shrink toward the rim; 0 = off (fixed in v0.6.1) |
 | `--grade-scale` | 0.6 | 0.5–0.7 | Cell size factor at the rim; 1 = off |
 | `--merge` | 3 | 2–4 | Voronoi nodes closer than this are merged (avoids blobs) |
 | `--band` | 5 | 4–6 | Bottom band height |
@@ -162,7 +162,7 @@ Key fields to check after each run:
 | `watertight`, `bodies` | `true`, `1` |
 | `unsupported_islands` | 0 |
 | `cantilevers` | empty, or only short flat wall struts (reach ≤ about 6 mm) |
-| `rim_unfilled_max_mm` | ≤ 6 (reach ≤ 3 mm; box, cylinder) |
+| `rim_unfilled_max_mm` | ≤ 6 (reach ≤ 3 mm) |
 | `stability.tip_over_angle_deg` | orb only: tilt at which the empty pot tips over |
 | `strut_crossings` | 0 |
 | `wall_metrics.inscribed_dia_mm_p50/p90/max` | Opening size; fits roots or medium? |

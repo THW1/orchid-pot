@@ -71,8 +71,9 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import Voronoi, cKDTree
 
-from potlib import (Grid, finish, floor_segments, poisson, pt_seg_dist, round_isect,
-                    rounded_box2, seg_seg_dist, smin, wall_metrics)
+from potlib import (Grid, finish, floor_field, floor_segments, grade_fraction, poisson,
+                    pt_seg_dist, require_rim_crossings, round_isect, rounded_box2,
+                    seg_seg_dist, smin, wall_metrics)
 
 
 # CTX: CLI contract: one subcommand ("noun") per shape; options shared by all shapes live in
@@ -148,8 +149,23 @@ def parse_args(argv=None):
     del args.eyelets_default
     if args.eyelets == 1 or args.eyelets < 0:
         p.error("--eyelets must be 0 or >= 2")
-    if args.shape == "cylinder" and abs(args.taper) > 20:
-        p.error("--taper is limited to +-20 deg (wall lean and the chart approximation)")
+    if args.shape == "box":
+        if args.eyelets not in (0, 2, 4):
+            p.error("box: --eyelets must be 0, 2 or 4 (they sit on the corners)")
+        if not args.wall / 2 < args.corner_r <= args.size / 2:
+            p.error("box: --corner-r must be > --wall/2 and <= --size/2")
+    if args.shape == "cylinder":
+        if abs(args.taper) > 20:
+            p.error("--taper is limited to +-20 deg (wall lean and the chart approximation)")
+        r_min = args.diameter / 2 - args.height * max(math.tan(math.radians(args.taper)), 0.0)
+        if r_min < 3 * args.wall:
+            p.error("cylinder: --taper too strong for --diameter/--height (floor would vanish)")
+    if args.shape == "orb":
+        if not max(45.0, args.min_angle + 10) <= args.min_wall_angle <= 80:
+            p.error("orb: --min-wall-angle must be in [max(45, --min-angle + 10), 80]; below "
+                    "that almost no strut direction stays printable near floor and opening")
+        if not 0.6 <= args.stretch <= 2.0:
+            p.error("orb: --stretch must be in [0.6, 2.0]")
     if args.out is None:
         args.out = f"orchid_{args.shape}"
     return args
@@ -327,8 +343,7 @@ def wall_graph(args, fr, rng, stats):
     # graded cells: spacing shrinks linearly over the top --grade-top fraction of the
     # height to --grade-scale x cell at the rim -> more struts reach the rim
     zg = args.height * (1 - args.grade_top)
-    cell_at = lambda p: args.cell * (1 - (1 - args.grade_scale) *
-                                     min(max((p[1] * s - zg) / (z1 - zg), 0.0), 1.0))
+    cell_at = lambda p: args.cell * (1 - (1 - args.grade_scale) * grade_fraction(p[1] * s, zg, z1))
     seeds = poisson(rng, [0, z0 / s], [fr.P, z1 / s], cell_at, period={0: fr.P})
     B = np.vstack([seeds, seeds * [1, -1] + [0, 2 * z0 / s], seeds * [1, -1] + [0, 2 * z1 / s]])
     C = np.vstack([B, B + [fr.P, 0], B - [fr.P, 0]])
@@ -541,6 +556,7 @@ def rim_gussets(args, fr, polys, stats):
     zr = args.height - args.rim
     us = sorted((a[0] + (zr - a[1]) / (b[1] - a[1]) * (b[0] - a[0])) % fr.P
                 for p in polys for a, b in zip(p[:-1], p[1:]) if (a[1] - zr) * (b[1] - zr) < 0)
+    require_rim_crossings(len(us))
     gaps = [((us[(k + 1) % len(us)] - u) % fr.P, u) for k, u in enumerate(us)]
     stats["rim_gaps_mm_p50/max"] = [round(float(np.median([g for g, _ in gaps])), 1),
                                     round(float(max(g for g, _ in gaps)), 1)]
@@ -664,16 +680,7 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     X2 = g.ax[0][:, None]; Y2 = g.ax[1][None, :]
     dfoot = fr.footprint_sdf(X2, Y2)
     uxy = fr.unmap_u(*np.broadcast_arrays(X2, Y2))
-    fl = np.full(dfoot.shape, 10.0)
-    fw = args.floor_strut / 2
-    for a, b in fsegs:
-        lo_ = np.minimum(a, b) - fw - 1; hi_ = np.maximum(a, b) + fw + 1
-        sl, X, Y, _ = g.box([lo_[0], lo_[1], 0], [hi_[0], hi_[1], 0])
-        ab = b - a
-        px, py = X[:, :, 0] - a[0], Y[:, :, 0] - a[1]
-        t = np.clip((px * ab[0] + py * ab[1]) / ab.dot(ab), 0, 1)
-        fl[sl[:2]] = np.minimum(fl[sl[:2]], np.hypot(px - t * ab[0], py - t * ab[1]) - fw)
-    fl = np.maximum(fl, dfoot + 1.0)
+    fl = floor_field(g, fsegs, dfoot, args)
 
     zc_b = args.band / 2 - 1
     for iz, z in enumerate(g.ax[2]):

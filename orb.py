@@ -12,8 +12,10 @@
 #              Pattern: SphericalVoronoi of Poisson seeds on a sphere, mapped to the
 #              ellipsoid by stretching z. The stretch elongates cells vertically, like
 #              --zstretch for box/cylinder. Seeds are mirrored in polar angle at the
-#              band/rim anchor latitudes, so cells close into them. That mirror is not an
-#              isometry, so boundary vertices are snapped onto the latitude.
+#              band/rim anchor latitudes, so cells close into them. Only seeds whose image
+#              stays beyond the latitude are mirrored (otherwise it wraps over the pole into
+#              the band). That mirror is not an isometry, so boundary vertices are snapped
+#              onto the latitude.
 #              Printability as for box/cylinder but on true 3D angles. Nodes are lifted
 #              along the meridian (up the curved wall), long shallow struts become arches
 #              with the apex lifted along the meridian, and clashing arches stay flat.
@@ -25,7 +27,8 @@
 # Constraints: Same packages as potlib.py; peak memory is above the box (shell arrays).
 # Invariants:  args.height is set to the derived rim height before potlib checks run; they
 #              use it for the rim zone.
-# Tests:       No golden test yet (experimental). Per run: report checks plus stability.
+# Tests:       tests/test_regression.py::test_orb_graph_smoke (no golden yet, experimental).
+#              Per run: report checks plus stability and rim_unfilled_max_mm.
 # Limitations: The anchor snapping moves boundary vertices slightly. Opening metrics use a
 #              chart at the belly radius (sizes near floor/rim overstated by up to 1/0.8).
 #              Strut width is measured along chords, not geodesics.
@@ -39,7 +42,8 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import SphericalVoronoi, cKDTree
 
-from potlib import Grid, finish, floor_segments, pt_seg_dist, round_isect, rounded_box2, smin, wall_metrics
+from potlib import (Grid, finish, floor_field, floor_segments, grade_fraction, pt_seg_dist,
+                    require_rim_crossings, round_isect, rounded_box2, smin, wall_metrics)
 
 
 class OrbShape:
@@ -57,6 +61,8 @@ class OrbShape:
         self.zc = self.c * math.cos(self.phi_f)
         self.H = 2 * self.zc
         self.r_floor = self.a * math.sin(self.phi_f)
+        # outer face at z = 0: the wall (slope al) is t / sin(al) wide along a horizontal
+        self.r_floor_out = self.r_floor + self.t / 2 / math.sin(al)
         self.extent = self.a_out + self.t
 
     def z_of_phi(self, phi):
@@ -70,7 +76,9 @@ class OrbShape:
         return np.stack([self.a * d[..., 0], self.a * d[..., 1], self.zc + self.c * d[..., 2]], -1)
 
     def footprint_sdf(self, x, y):
-        return np.hypot(x, y) - self.r_floor
+        # outer footprint, as for the box: the floor (clipped 1 mm inside it) then overlaps
+        # the outward-leaning wall over its full thickness; the mid radius left a groove
+        return np.hypot(x, y) - self.r_floor_out
 
     def describe(self):
         return {"belly_dia_mm": 2 * self.a_out, "floor_opening_dia_mid_mm": round(2 * self.r_floor, 1),
@@ -96,6 +104,13 @@ def slerp_path(d0, d1, sh, step=3.0):
     return sh.to3d(pts / np.linalg.norm(pts, axis=1, keepdims=True))
 
 
+def densify(p, step=1.0):
+    seg = np.linalg.norm(np.diff(p, axis=0), axis=1)
+    out = [a + (b - a) * np.linspace(0, 1, max(1, math.ceil(L / step)), endpoint=False)[:, None]
+           for a, b, L in zip(p[:-1], p[1:], seg)]
+    return np.vstack(out + [p[-1:]])
+
+
 def steep_enough(p, q, tan):
     """Chord from the lower to the higher point rises at least atan(tan)."""
     lo, hi = (p, q) if p[2] <= q[2] else (q, p)
@@ -108,7 +123,7 @@ def orb_graph(args, sh, rng, stats):
     z0, z1 = args.band / 2 + 0.5, sh.H - args.rim / 2           # anchor latitudes (as box)
     p0, p1 = float(sh.phi_of_z(z0)), float(sh.phi_of_z(z1))
     zg = sh.H * (1 - args.grade_top)
-    cell_at = lambda z: args.cell * (1 - (1 - args.grade_scale) * min(max((z - zg) / (z1 - zg), 0.0), 1.0))
+    cell_at = lambda z: args.cell * (1 - (1 - args.grade_scale) * grade_fraction(z, zg, z1))
 
     # Poisson seeds on the sphere of radius a, area-uniform in the band p0..p1
     seeds, rad = [], []
@@ -125,7 +140,12 @@ def orb_graph(args, sh, rng, stats):
     seeds = np.asarray(seeds)
     n = len(seeds)
     ph, th = phi_th(seeds)
-    pts = np.vstack([seeds, dir_of(2 * p0 - ph, th), dir_of(2 * p1 - ph, th)])
+    # Mirror in polar angle only seeds whose image stays beyond its anchor latitude: for
+    # ph > 2*p0 (or < 2*p1 - pi) the image wraps over the pole back into the band and
+    # pins interior vertices to the anchor line (seen at --stretch 1.4 --min-wall-angle 50)
+    mb, mr = ph < 2 * p0, ph > 2 * p1 - math.pi
+    nb = int(mb.sum())
+    pts = np.vstack([seeds, dir_of(2 * p0 - ph[mb], th[mb]), dir_of(2 * p1 - ph[mr], th[mr])])
     sv = SphericalVoronoi(pts, radius=1.0)
     sv.sort_vertices_of_regions()
     owner = {}                                     # vertex -> set of point indices
@@ -144,9 +164,9 @@ def orb_graph(args, sh, rng, stats):
     for v in used:
         o = owner[v]
         d = sv.vertices[v].copy()
-        if any(n <= q < 2 * n for q in o):
+        if any(n <= q < n + nb for q in o):
             side[v] = 0
-        elif any(q >= 2 * n for q in o):
+        elif any(q >= n + nb for q in o):
             side[v] = 1
         if v in side:                              # snap onto the anchor latitude
             _, t_ = phi_th(d)
@@ -245,6 +265,11 @@ def orb_graph(args, sh, rng, stats):
         apex_cache[key] = res
         return res
 
+    def legs_of(e):
+        """Arch legs (from e[0], from e[1]) resampled at <= 1 mm for the clash test."""
+        ap = apex(e)
+        return [densify(slerp_path(dirs[v], ap, sh)) for v in e]
+
     def shape_of(e):
         if cls[e] == "long":
             ap = apex(e)
@@ -291,10 +316,12 @@ def orb_graph(args, sh, rng, stats):
         tree = cKDTree(pts)
         clash = None
         for e in sorted((e for e in E if cls[e] == "long"), key=lambda e: -horiz(*e)):
-            legs = shape_of(e)
-            near = {own[k] for ks in tree.query_ball_point(legs, args.strut) for k in ks}
-            if any(o != e and not (set(o) & set(e)) for o in near):
-                clash = e
+            # per leg: only struts at that leg's own end node are exempt (as for the box)
+            for v, leg in zip(e, legs_of(e)):
+                near = {own[k] for ks in tree.query_ball_point(leg, args.strut) for k in ks}
+                if any(o != e and v not in o for o in near):
+                    clash = e
+            if clash:
                 break
         if clash is None:
             break
@@ -335,6 +362,7 @@ def rim_gaps(args, sh, polys, stats):
                 q = a + (zr - a[2]) / (b[2] - a[2]) * (b - a)
                 ths.append(math.atan2(q[1], q[0]) % (2 * math.pi))
     ths.sort()
+    require_rim_crossings(len(ths))
     rr = sh.a * math.sin(float(sh.phi_of_z(zr)))
     gaps = [(ths[(k + 1) % len(ths)] - t) % (2 * math.pi) for k, t in enumerate(ths)]
     stats["rim_gaps_mm_p50/max"] = [round(float(np.median(gaps)) * rr, 1), round(float(max(gaps)) * rr, 1)]
@@ -356,17 +384,7 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     X2, Y2 = np.meshgrid(g.ax[0], g.ax[1], indexing="ij")
     rho2, th2 = np.hypot(X2, Y2), np.arctan2(Y2, X2)
 
-    # floor pattern (2D), as in orchid_pot.build_sdf
-    fl = np.full(X2.shape, 10.0)
-    fw = args.floor_strut / 2
-    for a, b in fsegs:
-        lo_ = np.minimum(a, b) - fw - 1; hi_ = np.maximum(a, b) + fw + 1
-        sl, X, Y, _ = g.box([lo_[0], lo_[1], 0], [hi_[0], hi_[1], 0])
-        ab = b - a
-        px, py = X[:, :, 0] - a[0], Y[:, :, 0] - a[1]
-        tt = np.clip((px * ab[0] + py * ab[1]) / ab.dot(ab), 0, 1)
-        fl[sl[:2]] = np.minimum(fl[sl[:2]], np.hypot(px - tt * ab[0], py - tt * ab[1]) - fw)
-    fl = np.maximum(fl, sh.footprint_sdf(X2, Y2) + 1.0)
+    fl = floor_field(g, fsegs, sh.footprint_sdf(X2, Y2), args)
 
     # shell voxels: project onto the mid-surface meridian ellipse (Newton on phi)
     a, c, zc = sh.a, sh.c, sh.zc
@@ -467,6 +485,18 @@ def grow_rim_gussets(args, sh, g, gaps, sel_idx, aw, stats):
             d1 = ndimage.distance_transform_edt(~G[:, :, k_ - 1]) * g.h
             G[:, :, k_] |= (d1 <= dz / ts) & env
     added = G & ~S
+    # remaining bridge under the rim: longest unfilled arc of the mid-surface circle in the
+    # last layer below the rim (box: rim_unfilled_max_mm; <= 6 mm keeps the reach <= 3 mm)
+    kb = int(np.searchsorted(g.ax[2][rows], zr)) - 1
+    na = int(2 * math.pi * rr / 0.2)
+    tha = np.arange(na) * 2 * math.pi / na
+    ix = np.clip(np.round((rr * np.cos(tha) - g.lo[0]) / g.h).astype(int), 0, g.n[0] - 1)
+    iy = np.clip(np.round((rr * np.sin(tha) - g.lo[1]) / g.h).astype(int), 0, g.n[1] - 1)
+    filled = G[ix, iy, kb]
+    runs, cur = [0], 0
+    for v in np.concatenate([filled, filled]):
+        cur = 0 if v else cur + 1; runs.append(cur)
+    stats["rim_unfilled_max_mm"] = round(min(max(runs), na) * 2 * math.pi * rr / na, 1)
     stats["rim_gussets"] = len(gaps)
     stats["gusset_volume_cm3"] = round(float(added.sum()) * g.h ** 3 / 1000, 1)
     sd = ndimage.distance_transform_edt(~G) * g.h - ndimage.distance_transform_edt(G) * g.h

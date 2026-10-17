@@ -84,6 +84,34 @@ def seg_seg_dist(a, b, A, B):
 
 # ---------- metrics and floor ----------
 
+def grade_fraction(z, zg, z1):
+    """Cell grading weight: 0 below zg, rising linearly to 1 at z1. If the range is empty
+    (e.g. --grade-top 0) grading is off; the bare formula would invert and shrink every cell."""
+    return min(max((z - zg) / (z1 - zg), 0.0), 1.0) if z1 > zg else 0.0
+
+
+def require_rim_crossings(n):
+    """Rim gaps need >= 2 struts crossing the rim line (0: max() of nothing; 1: a full
+    turn would read as a 0 mm gap)."""
+    if n < 2:
+        raise SystemExit("error: fewer than 2 struts reach the rim line; "
+                         "try a smaller --cell or another --seed")
+
+
+def floor_field(g, fsegs, dfoot, args):
+    """2D SDF of the floor lattice, clipped 1 mm inside the footprint (dfoot = SDF of the
+    footprint on the grid's xy plane)."""
+    fl = np.full(dfoot.shape, 10.0)
+    fw = args.floor_strut / 2
+    for a, b in fsegs:
+        lo_ = np.minimum(a, b) - fw - 1; hi_ = np.maximum(a, b) + fw + 1
+        sl, X, Y, _ = g.box([lo_[0], lo_[1], 0], [hi_[0], hi_[1], 0])
+        ab = b - a
+        px, py = X[:, :, 0] - a[0], Y[:, :, 0] - a[1]
+        t = np.clip((px * ab[0] + py * ab[1]) / ab.dot(ab), 0, 1)
+        fl[sl[:2]] = np.minimum(fl[sl[:2]], np.hypot(px - t * ab[0], py - t * ab[1]) - fw)
+    return np.maximum(fl, dfoot + 1.0)
+
 def wall_metrics(args, fr, polys, stats, res=0.5):
     """Orientation mix and opening sizes of the unrolled wall."""
     r = args.strut / 2
