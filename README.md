@@ -15,8 +15,28 @@ Design rationale and rejected alternatives are in the context header of `orchid_
 
 ## Requirements
 
-Python 3 with `numpy`, `scipy`, `scikit-image`, `trimesh`, `fast_simplification` and
-`shapely`. The previews also need Blender (tested with 5.2.2).
+| Component | Needed for | Tested with |
+|---|---|---|
+| Python 3 | everything | 3.14.8 |
+| Python packages (`requirements.txt`) | generating STLs | see below |
+| Blender | preview renders only (`render.py`), optional | 5.2.2 LTS |
+| pytest, pyflakes (`requirements-dev.txt`) | tests and lint, optional | 8.4.2, 3.4.0 |
+
+Install the Python packages:
+
+```bash
+pip3 install -r requirements.txt          # numpy scipy scikit-image trimesh
+                                          # fast-simplification shapely rtree networkx
+pip3 install -r requirements-dev.txt      # adds pytest and pyflakes
+```
+
+`rtree` and `networkx` are not imported directly. trimesh needs them for the slice
+polygons that the island and cantilever checks use. The lower bounds in
+`requirements.txt` are the tested versions; older versions are untested.
+
+Blender comes from the distribution (for example `dnf install blender`) or from
+blender.org. `render.py` uses Blender's own Python and the built-in STL importer, so no
+pip packages are needed for it.
 
 A full run takes about 30 s and peaks at about 1.3 GB RAM (default settings, 6 cores).
 

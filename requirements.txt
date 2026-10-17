@@ -1,0 +1,10 @@
+# Runtime dependencies of orchid_pot.py / potlib.py (tested versions as lower bounds).
+numpy>=2.4
+scipy>=1.16
+scikit-image>=0.25
+trimesh>=4.12
+fast-simplification>=0.2
+shapely>=2.1
+# needed by trimesh for the slice polygons used in the island and cantilever checks
+rtree>=1.4
+networkx>=3.6
