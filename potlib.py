@@ -268,8 +268,9 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
     return out
 
 
-def finish(g, args, stats, t0):
-    """Mesh the SDF grid, decimate, check, write <out>.stl and <out>_report.json."""
+def finish(g, args, stats, t0, extra_checks=None):
+    """Mesh the SDF grid, decimate, check, write <out>.stl and <out>_report.json.
+    extra_checks(mesh, stats): optional shape-specific checks (orb: stability)."""
     mesh = to_mesh(g, stats)
     g.D = None                                 # free the voxel grid (~180 MB) before decimating
     print(f"mesh {time.time() - t0:.1f}s {len(mesh.faces)} tris")
@@ -284,6 +285,8 @@ def finish(g, args, stats, t0):
     else:
         stats["decimation_skipped"] = "result not watertight or disabled"
     check_mesh(mesh, args, stats)
+    if extra_checks:
+        extra_checks(mesh, stats)
     mesh.export(args.out + ".stl")
     with open(args.out + "_report.json", "w") as fh:
         json.dump(stats, fh, indent=1)

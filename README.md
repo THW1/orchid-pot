@@ -8,6 +8,7 @@ eyelets. The shape is chosen as a subcommand:
 |---|---|---|
 | `box` | rounded-square box | 4, at the corners |
 | `cylinder` | cylinder, or with `--taper` a cone frustum (flowerpot) | 3 |
+| `orb` | **experimental**: "onion" (stretched ellipsoid) with flat floor and top opening | 3 |
 
 It is tuned for PETG with a 0.4 mm nozzle, printed upright without supports.
 
@@ -46,6 +47,7 @@ A full run takes about 30 s and peaks at about 1.3 GB RAM (default settings, 6 c
 python3 orchid_pot.py box                              # → orchid_box.stl + orchid_box_report.json
 python3 orchid_pot.py cylinder --taper 8               # flowerpot, 150 mm at the rim
 python3 orchid_pot.py cylinder --taper 12 --eyelets 0  # standing pot, no eyelets
+python3 orchid_pot.py orb                              # onion, 150 mm belly (~95 s, ~2.4 GB)
 python3 orchid_pot.py box --seed 3 --out pot_s3        # another random pattern, other file names
 python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~2 s), no mesh
 python3 orchid_pot.py cylinder --help                  # options for that shape
@@ -70,21 +72,35 @@ outside them work, but check the report.
 | `box` | `--corner-r` | 20 | 15–25 | Outer radius of the vertical edges; must exceed `--wall`/2 |
 | `cylinder` | `--diameter` | 150 | – | Outer diameter at the rim |
 | `cylinder` | `--taper` | 0 | −15…+15 | Wall lean from vertical in degrees; > 0 widens upward. Limit ±20 |
+| `orb` | `--diameter` | 150 | – | Outer diameter at the belly |
+| `orb` | `--stretch` | 1.2 | 1.0–1.4 | Height/width ratio of the ellipsoid; 1 = sphere |
+| `orb` | `--min-wall-angle` | 55 | 50–60 | Wall angle from horizontal where floor and opening are cut |
 
 At `--taper 8` the floor diameter is 121.9 mm; at `--taper 15` it is 96.4 mm (for a
 150 mm rim, 100 mm height).
+
+The orb has no `--height` or `--zstretch`: floor, opening and height follow from
+`--diameter`, `--stretch` and `--min-wall-angle`, and the stretch elongates the cells.
+Values at 150 mm diameter (mid-wall floor/opening Ø, rim height):
+
+| `--stretch` | `--min-wall-angle 50` | `55` (default) | `60` |
+|---|---|---|---|
+| 1.2 (default) | 101.9 / 124.5 | 110.7 / 113.0 | 119.0 / 100.0 |
+
+`--stretch 1.0` gives 118.8 / 83.2 and `--stretch 1.4` gives 103.0 / 144.2 (both at 55°).
+Below about 50°, few strut directions can still be printed near the floor and opening.
 
 ### Common options (all shapes)
 
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
-| `--height` | 100 | – | Body height; the eyelets add about 11 mm |
-| `--eyelets` | box 4, cylinder 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 4 = at the corners |
+| `--height` | 100 | – | Body height; the eyelets add about 11 mm (box, cylinder) |
+| `--eyelets` | box 4, cylinder/orb 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 4 = at the corners |
 | `--wall` | 5 | 4–6 | Wall thickness |
 | `--strut` | 4.5 | 4–5 | Wall strut width (about 10 lines at 0.42 mm) |
 | `--edge-round` | 1.0 | 0.5–1.5 | Rounding of the strut face edges |
 | `--cell` | 17 | 14–20 | Wall cell size (seed spacing). Smaller means smaller openings, more weight |
-| `--zstretch` | 1.2 | 1.2–1.4 | Vertical cell elongation. Lower is more isotropic but needs more fixes (see below) |
+| `--zstretch` | 1.2 | 1.2–1.4 | Vertical cell elongation (box, cylinder). Lower is more isotropic but needs more fixes (see below) |
 | `--min-angle` | 35 | 35–40 | Minimum strut angle from horizontal that counts as printable |
 | `--max-bridge` | 10 | 6–10 | Flat struts up to this horizontal span stay flat; longer ones become pointed arches |
 | `--max-arch` | 25 | 20–25 | Wider shallow struts are not arched (kept as flat bridges) |
@@ -134,7 +150,8 @@ python3 -m pytest -q tests/     # ~100 s
 
 The tests check that box, cylinder and cylinder `--taper 8` (seed 7) give byte-identical
 STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 release.
-Regenerate the golden files only for an intended output change.
+Regenerate the golden files only for an intended output change. The experimental orb has
+only a smoke test of its strut graph.
 
 ## Report (`<out>_report.json`)
 
@@ -145,7 +162,8 @@ Key fields to check after each run:
 | `watertight`, `bodies` | `true`, `1` |
 | `unsupported_islands` | 0 |
 | `cantilevers` | empty, or only short flat wall struts (reach ≤ about 6 mm) |
-| `rim_unfilled_max_mm` | ≤ 6 (reach ≤ 3 mm) |
+| `rim_unfilled_max_mm` | ≤ 6 (reach ≤ 3 mm; box, cylinder) |
+| `stability.tip_over_angle_deg` | orb only: tilt at which the empty pot tips over |
 | `strut_crossings` | 0 |
 | `wall_metrics.inscribed_dia_mm_p50/p90/max` | Opening size; fits roots or medium? |
 | `mass_g_petg_1.27` | Weight estimate (PETG 1.23–1.29 g/cm³) |
@@ -160,8 +178,8 @@ showed no warning there.
 - Print upright on the floor, without supports. Optionally paint support on any strut
   listed under `cantilevers`.
 - Lattices string easily with PETG, so tune retraction and travel.
-- The weight with defaults is about 210–220 g (box) and about 170 g (cylinder); the
-  slicer gives the exact value.
+- The weight with defaults is about 210–220 g (box) and about 170 g (cylinder, orb);
+  the slicer gives the exact value.
 
 ## Limitations
 
@@ -173,3 +191,6 @@ showed no warning there.
 - Struts where an arch would collide stay as flat bridges, with no gusset underneath.
   Long ones show up in `cantilevers`.
 - The gussets show a slight 0.4 mm staircase texture (the voxel pitch).
+- Orb (experimental): the opening metrics use a layout at the belly radius, so sizes near
+  the floor and rim are overstated by up to about 25%. Mirror-snapping moves cells at
+  the band and rim lines slightly. Not yet test-printed.

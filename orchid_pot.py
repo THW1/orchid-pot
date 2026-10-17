@@ -3,8 +3,9 @@
 # === CONTEXT ===
 # Purpose:     Generate a printable STL of an orchid basket/pot (Vanda style) with planar
 #              Voronoi walls and floor, solid bottom band, top rim and optional flat hanging
-#              eyelets. Shapes are subcommands: box (rounded square) and cylinder (optionally
-#              tapered). Target: PETG, 0.4 mm nozzle, printed upright without supports.
+#              eyelets. Shapes are subcommands: box (rounded square), cylinder (optionally
+#              tapered) and the experimental orb (implemented in orb.py, imported only for
+#              `orb`). Target: PETG, 0.4 mm nozzle, printed upright without supports.
 # Decisions:   Walls are a planar (2D) Voronoi on the unrolled wall (u = arc length
 #              along the wall mid-curve, z), extruded through the wall thickness like
 #              the floor. Rejected: a 3D Voronoi lattice in a 12 mm shell (v2, archived
@@ -81,11 +82,9 @@ from potlib import (Grid, finish, floor_segments, poisson, pt_seg_dist, round_is
 def parse_args(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     g = common.add_argument_group("common")
-    g.add_argument("--height", type=float, default=100.0, help="body height without eyelets [mm]")
     g.add_argument("--wall", type=float, default=5.0, help="wall thickness [mm]")
     g.add_argument("--strut", type=float, default=4.5, help="wall strut width in the wall plane [mm]")
     g.add_argument("--cell", type=float, default=17.0, help="seed spacing of the wall Voronoi [mm]")
-    g.add_argument("--zstretch", type=float, default=1.2, help="vertical cell elongation factor")
     g.add_argument("--eyelets", type=int, default=None,
                    help="hanging eyelets: 0 = none (standing pot), else >= 2 (default: shape)")
     g.add_argument("--seed", type=int, default=7, help="random pattern")
@@ -113,21 +112,36 @@ def parse_args(argv=None):
     g.add_argument("--voxel", type=float, default=0.4, help="SDF grid pitch [mm]")
     g.add_argument("--decimate", type=float, default=0.75, help="fraction of triangles to remove")
 
+    # box and cylinder: straight walls with free height; the orb derives its height
+    upright = argparse.ArgumentParser(add_help=False)
+    g = upright.add_argument_group("upright walls")
+    g.add_argument("--height", type=float, default=100.0, help="body height without eyelets [mm]")
+    g.add_argument("--zstretch", type=float, default=1.2, help="vertical cell elongation factor")
+
     p = argparse.ArgumentParser(description="Voronoi orchid basket STL generator")
     sub = p.add_subparsers(dest="shape", required=True, metavar="SHAPE")
-    b = sub.add_parser("box", parents=[common], help="rounded-square box (default 4 eyelets)",
+    b = sub.add_parser("box", parents=[upright, common], help="rounded-square box (default 4 eyelets)",
                        description="Rounded-square box with planar Voronoi walls.")
     g = b.add_argument_group("box")
     g.add_argument("--size", type=float, default=150.0, help="outer width/depth [mm]")
     g.add_argument("--corner-r", type=float, default=20.0, help="outer vertical edge radius [mm]")
     b.set_defaults(eyelets_default=4)
-    c = sub.add_parser("cylinder", parents=[common], help="round pot, optionally tapered (default 3 eyelets)",
+    c = sub.add_parser("cylinder", parents=[upright, common], help="round pot, optionally tapered (default 3 eyelets)",
                        description="Cylinder or cone frustum with planar Voronoi walls.")
     g = c.add_argument_group("cylinder")
     g.add_argument("--diameter", type=float, default=150.0, help="outer diameter at the rim [mm]")
     g.add_argument("--taper", type=float, default=0.0,
                    help="wall lean from vertical [deg]; > 0 widens upward (flowerpot), max +-20")
     c.set_defaults(eyelets_default=3)
+    o = sub.add_parser("orb", parents=[common], help="EXPERIMENTAL onion/egg shape with flat floor (default 3 eyelets)",
+                       description="EXPERIMENTAL: vertically stretched ellipsoid cut where the wall angle "
+                                   "reaches --min-wall-angle; floor, opening and height follow from that.")
+    g = o.add_argument_group("orb")
+    g.add_argument("--diameter", type=float, default=150.0, help="outer diameter at the belly [mm]")
+    g.add_argument("--stretch", type=float, default=1.2, help="height/width ratio of the ellipsoid (1 = sphere)")
+    g.add_argument("--min-wall-angle", type=float, default=55.0,
+                   help="wall angle from horizontal at floor and opening [deg]; sets floor/opening/height")
+    o.set_defaults(eyelets_default=3)
     args = p.parse_args(argv)
     if args.eyelets is None:
         args.eyelets = args.eyelets_default
@@ -676,6 +690,9 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
 
 def main():
     args = parse_args()
+    if args.shape == "orb":                    # experimental, kept out of this module
+        import orb
+        return orb.run(args)
     rng = np.random.default_rng(args.seed)
     fr = make_frame(args)
     stats = {"params": vars(args), "shape": {"type": args.shape, **fr.describe()}}

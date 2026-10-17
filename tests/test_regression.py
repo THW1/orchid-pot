@@ -33,3 +33,14 @@ def test_output_unchanged(name, tmp_path):
     report.pop("params"), golden.pop("params")
     assert report == golden
     assert hashlib.sha256((tmp_path / f"{name}.stl").read_bytes()).hexdigest() == HASHES[name]
+
+
+def test_orb_graph_smoke():
+    """Experimental orb: no golden yet; the strut graph must need no node removal and keep
+    all non-adjacent struts at least half a strut width apart."""
+    r = subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "orb", "--graph-only"],
+                       check=True, capture_output=True, text=True).stdout
+    stats = json.loads(r[r.index("{"):])
+    assert stats["removed_unsupported_or_leaf_nodes"] == 0
+    assert stats["strut_clearance_violations"] == 0
+    assert stats["wall_metrics"]["inscribed_dia_mm_p50/p90/max"][2] < 35
