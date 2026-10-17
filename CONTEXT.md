@@ -1,5 +1,5 @@
 # Project context: orchid-pot
-Verified-at: v0.7.0 (git tag)
+Verified-at: v0.7.1 (git tag)
 
 ## Purpose
 This project generates printable STLs of Voronoi orchid baskets and pots for PETG with a
@@ -14,7 +14,7 @@ orchid_pot.py           CLI + box/cylinder pipeline: frame → strut graph → S
 potlib.py               shape-independent helpers: SDF primitives, Poisson, Grid, floor, metrics,
                         meshing, checks, finish() (mesh → decimate → check → write)
 orb.py                  EXPERIMENTAL orb pipeline (sphere Voronoi, 3D printability, shell SDF)
-accessories.py          optional separate parts: drip tray (saucer); reads pot geometry read-only
+accessories.py          optional separate parts: drip tray (saucer, clip); reads pot geometry read-only
 render.py               Blender (headless, Cycles) preview renders of an STL
 tests/test_regression.py  byte-identical STL + report for box, cylinder, cylinder --taper 8;
                         orb strut-graph smoke test
@@ -62,6 +62,12 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `accessories.py::TrayGeometry` reads `BoxFrame` (map, quad, side, r, c, half_out),
   `ConeFrame` (r_out, r_mid, H, cos_t, tan_t) and `orb.py::OrbShape` (a_out, r_floor).
   Renaming those attributes breaks the tray, and the tray tests catch it.
+- `orchid_pot.py::main` → `accessories.py::run`: for `--tray clip` it passes the pot's
+  strut paths (`orchid_pot.py::wall_graph` in chart coordinates, `orb.py::orb_graph` in
+  3D) from the same seed, so the clips find the pot's lattice gaps.
+- `accessories.py::BAND_TOP_ALLOWANCE` / `BAND_EDGE_ROUND` mirror the pot's band/floor
+  smooth union (k = 2.0) and band edge rounding (1.5 mm) in `orchid_pot.py::build_sdf`
+  and `orb.py::build_orb_sdf`; change them together.
 - `orb.py` → `potlib.py` only. The orb never imports `orchid_pot.py`, and
   `orchid_pot.py` imports `orb` only for the `orb` subcommand.
 - `orb.py::run` sets `args.height` to the derived rim height before the potlib checks,

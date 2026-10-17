@@ -91,6 +91,7 @@
  "gusset_area_cm2": 4.5,
  "rim_unfilled_max_mm": 4.6,
  "decimation_ratio": 0.75,
+ "stl_roundtrip_watertight": true,
  "triangles": 400842,
  "watertight": true,
  "winding_consistent": true,

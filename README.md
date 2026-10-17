@@ -52,6 +52,7 @@ python3 orchid_pot.py box --seed 3 --out pot_s3        # another random pattern,
 python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~2 s), no mesh
 python3 orchid_pot.py cylinder --parts pot,tray        # pot + drip tray (saucer)
 python3 orchid_pot.py box --parts tray                 # only the tray (~5 s), pot unchanged
+python3 orchid_pot.py orb --parts tray --tray clip     # clip-on tray for hanging pots
 python3 orchid_pot.py cylinder --help                  # options for that shape
 blender -b --factory-startup --python render.py -- $PWD/orchid_box.stl $PWD/preview_box
 ```
@@ -128,13 +129,25 @@ Below about 50°, few strut directions can still be printed near the floor and o
 
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
-| `--parts` | `pot` | `pot`, `tray`, `pot,tray` | Parts to build. Each writes its own STL + report, e.g. `orchid_box_tray.stl` |
-| `--tray` | `saucer` | – | Tray type. The clip-on variant for hanging pots follows |
+| `--parts` | `pot` | `pot`, `tray`, `pot,tray` | Parts to build. Each writes its own STL + report: `orchid_<shape>_tray.stl` (saucer), `orchid_<shape>_tray_clip.stl` (clip) |
+| `--tray` | `saucer` | `saucer`, `clip` | `saucer` for standing pots; `clip` snaps onto the pot's bottom band, for hanging pots |
 | `--tray-gap` | 3 | 2–5 | Gap between the pot's outline (widest at any height) and the tray wall |
 | `--tray-wall` | 2.4 | 2.0–3.0 | Tray wall thickness (about 6 lines for watertight walls) |
 | `--tray-floor` | 2.0 | 1.6–2.4 | Tray floor thickness |
-| `--standoff` | 6 | 4–8 | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm |
+| `--standoff` | saucer 6, clip auto (~10–11) | 4–8 (saucer) | Height of the pot bottom above the tray floor. Water depth = standoff − 1 mm. Clip: chosen so the arm stays ≤ 2 % strain |
 | `--tray-rise` | 4 | 2–8 | Tray wall height above the pot bottom |
+| `--clips` | box 4, round 3 | 3–4 | Number of clips (box: side centres; round: 120° apart, each moved into a free lattice gap) |
+| `--clip-width` | 8 | 6–10 | Clip width along the band |
+| `--clip-thickness` | 1.6 | 1.2–2.0 | Clip arm thickness (4 lines). Thicker = stiffer, needs a longer arm |
+| `--clip-hook` | 0.6 | 0.4–1.0 | Hook reach onto the flat band top, past the band's 1.5 mm edge rounding |
+| `--clip-clearance` | 0.3 | 0.2–0.5 | Clearance between clip and pot; adjust after a test print |
+
+**Clip tray:** flexible arms rise beside the bottom band. Their hooks snap over the band top
+into lattice openings and sit on the flat band top. When seated, the pot only touches the
+feet; when lifted 0.6–1.2 mm, all hooks engage. Arm strain is about 2 % (PETG snap-fit
+guideline 1.5–2 %). To remove the tray, bend the arms outward one by one. The clearance
+is an estimate: print a test tray first [UNVERIFIED] and adjust `--clip-clearance`.
+Defaults: box about 218 ml / 98 g, cylinder about 172 ml / 83 g, orb about 187 ml / 84 g.
 
 The pot stands on 8 feet under its solid bottom band, not under the floor lattice, so
 drainage stays open. Each foot has an outer stop, which leaves about 1 mm side play. The
@@ -172,7 +185,9 @@ The tests check that box, cylinder and cylinder `--taper 8` (seed 7) give byte-i
 STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 release.
 Regenerate the golden files only for an intended output change. The experimental orb has
 only a smoke test of its strut graph; the trays (box, orb) are checked for one watertight
-body, no islands and at least 80 ml capacity.
+body, no islands and at least 80 ml capacity, and the clip trays for all clips placed and
+≤ 2 % arm strain. Every STL must stay watertight after export and reload
+(`stl_roundtrip_watertight`).
 
 ## Report (`<out>_report.json`)
 

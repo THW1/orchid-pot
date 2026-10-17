@@ -92,6 +92,7 @@
  "rim_unfilled_max_mm": 3.4,
  "micro_voids_filled": 1,
  "decimation_ratio": 0.75,
+ "stl_roundtrip_watertight": true,
  "triangles": 356766,
  "watertight": true,
  "winding_consistent": true,

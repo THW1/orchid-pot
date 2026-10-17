@@ -6,11 +6,13 @@
 # Decisions:   Split out of orchid_pot.py (v0.5.0, verbatim move) so orb.py can reuse the
 #              helpers without importing or touching the box/cylinder pipeline. Later
 #              additions shared by both pipelines: grade_fraction, floor_field,
-#              require_rim_crossings (v0.6.1) and finish(extra_checks=...).
+#              require_rim_crossings (v0.6.1), finish(extra_checks=...) and the STL round
+#              trip check of every decimation candidate (v0.7.1, stl_roundtrip_ok).
 #              Behaviour changes here affect every shape: run tests/ (byte-identical
 #              goldens for box and cylinder).
 # Related:     Used by orchid_pot.py (box, cylinder) and orb.py.
 # === END CONTEXT ===
+import io
 import json
 import math
 import time
@@ -303,22 +305,31 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
 #      the report.
 # Used-by: orchid_pot.py::main, orb.py::run
 # Invariant: g.D is released before decimation; callers must not use the grid afterwards.
+def stl_roundtrip_ok(mesh):
+    """True if the mesh is still watertight after binary STL export + reload."""
+    back = trimesh.load(io.BytesIO(mesh.export(file_type="stl")), file_type="stl")
+    return bool(back.is_watertight)
+
+
 def finish(g, args, stats, t0, extra_checks=None):
     """Mesh the SDF grid, decimate, check, write <out>.stl and <out>_report.json.
     extra_checks(mesh, stats): optional shape-specific checks (orb: stability)."""
     mesh = to_mesh(g, stats)
     g.D = None                                 # free the voxel grid (~180 MB) before decimating
     print(f"mesh {time.time() - t0:.1f}s {len(mesh.faces)} tris")
-    # quadric decimation occasionally leaves a non-manifold spot; retry milder once
+    # quadric decimation occasionally leaves a non-manifold spot; retry milder once. The
+    # candidate must also survive the STL round trip: float32 export can collapse a sliver
+    # that is fine in memory (seen on a clip tray: watertight in memory, not after reload).
     for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
         dec = clean(trimesh.Trimesh(v, f, process=True))
-        if dec.is_watertight:
+        if dec.is_watertight and stl_roundtrip_ok(dec):
             mesh = dec
             stats["decimation_ratio"] = ratio
             break
     else:
-        stats["decimation_skipped"] = "result not watertight or disabled"
+        stats["decimation_skipped"] = "result not watertight (after STL round trip) or disabled"
+    stats["stl_roundtrip_watertight"] = stl_roundtrip_ok(mesh)
     check_mesh(mesh, args, stats)
     if extra_checks:
         extra_checks(mesh, stats)

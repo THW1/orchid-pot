@@ -55,3 +55,15 @@ def test_tray_saucer_checks(shape, tmp_path):
     r = json.loads((tmp_path / f"{shape}_tray_report.json").read_text())
     assert r["watertight"] and r["bodies"] == 1 and r["unsupported_islands"] == 0
     assert r["tray"]["water_capacity_ml"] >= 80
+
+
+@pytest.mark.parametrize("shape,clips", [("box", 4), ("orb", 3)])
+def test_tray_clip_checks(shape, clips, tmp_path):
+    """Clip tray (no golden yet): valid STL after the round trip, all clips placed, arm
+    strain within the PETG snap-fit guideline."""
+    out = tmp_path / shape
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), shape, "--parts", "tray", "--tray", "clip",
+                    "--out", str(out)], check=True, capture_output=True)
+    r = json.loads((tmp_path / f"{shape}_tray_clip_report.json").read_text())
+    assert r["stl_roundtrip_watertight"] and r["bodies"] == 1 and r["unsupported_islands"] == 0
+    assert r["tray"]["clips"] == clips and r["tray"]["clip_strain_pct"] <= 2.0

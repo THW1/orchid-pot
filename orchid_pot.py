@@ -114,12 +114,21 @@ def parse_args(argv=None):
     g = common.add_argument_group("accessories (separate prints, see accessories.py)")
     g.add_argument("--parts", default="pot",
                    help="comma list of parts to build: pot, tray (default: pot)")
-    g.add_argument("--tray", choices=["saucer"], default="saucer", help="tray type")
+    g.add_argument("--tray", choices=["saucer", "clip"], default="saucer",
+                   help="saucer (standing) or clip (snaps onto the pot's bottom band, for hanging)")
     g.add_argument("--tray-gap", type=float, default=3.0, help="gap pot outline -> tray wall [mm]")
     g.add_argument("--tray-wall", type=float, default=2.4, help="tray wall thickness [mm]")
     g.add_argument("--tray-floor", type=float, default=2.0, help="tray floor thickness [mm]")
-    g.add_argument("--standoff", type=float, default=6.0, help="pot bottom above the tray floor [mm]")
+    g.add_argument("--standoff", type=float, default=None,
+                   help="pot bottom above the tray floor [mm] (default: saucer 6; clip: from the "
+                        "2 %% strain limit, about 10-11)")
     g.add_argument("--tray-rise", type=float, default=4.0, help="tray wall above the pot bottom [mm]")
+    g.add_argument("--clips", type=int, default=None, help="clip count (default: box 4, round 3)")
+    g.add_argument("--clip-width", type=float, default=8.0, help="clip width along the band [mm]")
+    g.add_argument("--clip-thickness", type=float, default=1.6, help="clip arm thickness [mm]")
+    g.add_argument("--clip-hook", type=float, default=0.6,
+                   help="hook reach onto the flat band top, past the band's edge rounding [mm]")
+    g.add_argument("--clip-clearance", type=float, default=0.3, help="clip-to-pot clearance [mm]")
     g = common.add_argument_group("mesh")
     g.add_argument("--voxel", type=float, default=0.4, help="SDF grid pitch [mm]")
     g.add_argument("--decimate", type=float, default=0.75, help="fraction of triangles to remove")
@@ -180,7 +189,7 @@ def parse_args(argv=None):
     args.parts = [s.strip() for s in args.parts.split(",") if s.strip()]
     if not args.parts or set(args.parts) - {"pot", "tray"}:
         p.error("--parts takes a comma list of: pot, tray")
-    if args.standoff < 2:
+    if args.standoff is not None and args.standoff < 2:
         p.error("--standoff must be >= 2 mm (water line stays 1 mm below the pot bottom)")
     if args.out is None:
         args.out = f"orchid_{args.shape}"
@@ -730,7 +739,14 @@ def main():
             geom = orb.OrbShape(args)
         else:
             geom = make_frame(args)
-        accessories.run(args, acc, geom)
+        struts = None
+        if args.tray == "clip":                # clips go into lattice openings above the band
+            rng = np.random.default_rng(args.seed)
+            if args.shape == "orb":
+                struts = orb.orb_graph(args, geom, rng, {})
+            else:
+                struts = wall_graph(args, geom, rng, {})[0]
+        accessories.run(args, acc, geom, struts)
 
 
 def build_pot(args):
