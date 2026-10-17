@@ -1,0 +1,121 @@
+{
+ "params": {
+  "shape": "cylinder",
+  "height": 100.0,
+  "wall": 5.0,
+  "strut": 4.5,
+  "cell": 17.0,
+  "zstretch": 1.2,
+  "eyelets": 3,
+  "seed": 7,
+  "out": "orchid_cylinder",
+  "graph_only": false,
+  "edge_round": 1.0,
+  "band": 5.0,
+  "rim": 6.0,
+  "floor": 5.0,
+  "floor_cell": 16.0,
+  "floor_strut": 4.5,
+  "eyelet_hole": 6.0,
+  "eyelet_wire": 4.5,
+  "fillet": 1.5,
+  "min_angle": 35.0,
+  "max_bridge": 10.0,
+  "max_arch": 25.0,
+  "grade_top": 0.25,
+  "grade_scale": 0.6,
+  "merge": 3.0,
+  "layer": 0.2,
+  "voxel": 0.4,
+  "decimate": 0.75,
+  "diameter": 150.0,
+  "taper": 0.0
+ },
+ "shape": {
+  "type": "cylinder",
+  "outer_dia_bottom/top_mm": [
+   150.0,
+   150.0
+  ],
+  "taper_deg": 0.0
+ },
+ "voronoi_nodes": 205,
+ "voronoi_edges": 315,
+ "nodes_lifted": 7,
+ "lift_mm_median/max": [
+  0.4,
+  2.8
+ ],
+ "removed_unsupported_or_leaf_nodes": 0,
+ "shallow_kept_flat": 17,
+ "strut_crossings": 0,
+ "edges_final": 315,
+ "edge_classes": {
+  "plane": 51,
+  "steep": 190,
+  "short": 37,
+  "long": 37
+ },
+ "edge_len_mm": {
+  "min": 3.1,
+  "median": 14.7,
+  "max": 28.5
+ },
+ "wall_metrics": {
+  "struts": 264,
+  "len_share_deg_0-22/22-45/45-67/67-90": [
+   0.35,
+   0.34,
+   0.24,
+   0.08
+  ],
+  "openings": 111,
+  "open_area_share": 0.62,
+  "inscribed_dia_mm_p50/p90/max": [
+   14.3,
+   19.2,
+   24.0
+  ],
+  "height_mm_p50/p90/max": [
+   22.0,
+   28.5,
+   34.5
+  ],
+  "height_to_width_p90": 1.5
+ },
+ "rim_gaps_mm_p50/max": [
+  13.1,
+  19.0
+ ],
+ "rim_gussets": 35,
+ "gusset_area_cm2": 4.5,
+ "rim_unfilled_max_mm": 4.6,
+ "decimation_ratio": 0.75,
+ "triangles": 401602,
+ "watertight": true,
+ "winding_consistent": true,
+ "volume_cm3": 135.8,
+ "mass_g_petg_1.27": 172.0,
+ "bbox_mm": [
+  150.8,
+  150.8,
+  111.0
+ ],
+ "bodies": 1,
+ "overhang_area_cm2": {
+  "rim_underside": 4.7,
+  "elsewhere": 16.6,
+  "total_surface": 959.8
+ },
+ "unsupported_islands": 0,
+ "island_positions": [],
+ "cantilevers": {
+  "wall": {
+   "regions": 1,
+   "max_reach_mm": 3.0,
+   "layers": [
+    15.9
+   ]
+  }
+ }
+}

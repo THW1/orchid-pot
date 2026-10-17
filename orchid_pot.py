@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # === CONTEXT ===
-# Purpose:     Generate a printable STL of a hanging orchid basket (Vanda style):
-#              rounded-square box with planar Voronoi walls and floor, solid bottom
-#              band, top rim and four flat hanging eyelets. Target: PETG, 0.4 mm
-#              nozzle, printed upright without supports.
+# Purpose:     Generate a printable STL of an orchid basket/pot (Vanda style) with planar
+#              Voronoi walls and floor, solid bottom band, top rim and optional flat hanging
+#              eyelets. Shapes are subcommands: box (rounded square) and cylinder (optionally
+#              tapered). Target: PETG, 0.4 mm nozzle, printed upright without supports.
 # Decisions:   Walls are a planar (2D) Voronoi on the unrolled wall (u = arc length
 #              along the wall mid-curve, z), extruded through the wall thickness like
 #              the floor. Rejected: a 3D Voronoi lattice in a 12 mm shell (v2, archived
@@ -29,6 +29,15 @@
 #              so more struts reach the rim and the gussets stay small.
 #              Rejected: random vs jittered-lattice seeding made little difference once
 #              lifting was in place, so the plain random (Poisson) Voronoi stays.
+#              Shapes are frames (BoxFrame, ConeFrame) behind one interface: rise, hor,
+#              scale, unmap_u, wall_fields, footprint_sdf, eyelet_u. The pipeline never
+#              branches on the shape. BoxFrame returns the v0.4.0 expressions exactly, so
+#              the box STL is byte-identical to v0.4.0 (tests/test_regression.py). The
+#              experimental orb is meant to live in its own module, not as a third frame
+#              here (its walls lean and are not developable).
+#              A taper's metric factor is always taken at a strut's lower end. Lift and
+#              classify must agree on it; with mismatched heights, the -8 deg taper lost
+#              34 nodes to the safety net.
 #              Mesh = SDF + marching cubes. The wall pattern is a 2D smooth-min distance
 #              field in (u, z), looked up per voxel via the inverse wall mapping. This
 #              gives node fillets and rounded face edges, with no booleans.
@@ -40,12 +49,16 @@
 # Invariants:  The band/rim mirror lines sit inside the band/rim solids; edges on them
 #              are anchors only and are not drawn. Grid origin has an odd offset, so no
 #              sample lands on a flat face (zero-area marching-cubes slivers otherwise).
-# Tests:       Report checks: watertight, one body, islands per 0.2 mm layer, overhang
-#              area, opening sizes, approximate OrcaSlicer cantilever check. Preview with
-#              render.py.
+# Tests:       tests/test_regression.py (byte-identical STL + report for box, cylinder,
+#              cylinder --taper 8). Per run, the report checks: watertight, one body,
+#              islands per 0.2 mm layer, overhang area, opening sizes, approximate
+#              OrcaSlicer cantilever check. Preview with render.py.
 # Limitations: In-plane distances are measured on the mid-curve, so at the corners
-#              struts are ~14% wider on the outer face than on the inner face. Wall
-#              arches that clash stay flat bridges; the cantilever check reports them.
+#              struts are ~14% wider on the outer face than on the inner face (box only).
+#              Tapered cylinders use an approximate chart (see ConeFrame): cells and struts
+#              follow the local radius only to first order, and the opening metrics are in
+#              chart units. Wall arches that clash stay flat bridges; the cantilever check
+#              reports them.
 # === END CONTEXT ===
 import argparse
 import json
@@ -62,40 +75,71 @@ from shapely.ops import unary_union
 from skimage.measure import marching_cubes
 
 
-# CTX: CLI contract. README.md's options table mirrors every flag, default and range.
+# CTX: CLI contract: one subcommand ("noun") per shape; options shared by all shapes live in
+#      a parent parser, so `orchid_pot.py <shape> --help` lists only what applies.
+#      README.md's options tables mirror every flag, default and range.
 # Used-by: orchid_pot.py::main, README.md:Options
-def parse_args():
+def parse_args(argv=None):
+    common = argparse.ArgumentParser(add_help=False)
+    g = common.add_argument_group("common")
+    g.add_argument("--height", type=float, default=100.0, help="body height without eyelets [mm]")
+    g.add_argument("--wall", type=float, default=5.0, help="wall thickness [mm]")
+    g.add_argument("--strut", type=float, default=4.5, help="wall strut width in the wall plane [mm]")
+    g.add_argument("--cell", type=float, default=17.0, help="seed spacing of the wall Voronoi [mm]")
+    g.add_argument("--zstretch", type=float, default=1.2, help="vertical cell elongation factor")
+    g.add_argument("--eyelets", type=int, default=None,
+                   help="hanging eyelets: 0 = none (standing pot), else >= 2 (default: shape)")
+    g.add_argument("--seed", type=int, default=7, help="random pattern")
+    g.add_argument("--out", default=None, help="output prefix (default: orchid_<shape>)")
+    g.add_argument("--graph-only", action="store_true", help="stop after the strut graph and its metrics")
+    g = common.add_argument_group("details (rarely changed)")
+    g.add_argument("--edge-round", type=float, default=1.0, help="rounding of strut face edges [mm]")
+    g.add_argument("--band", type=float, default=5.0, help="bottom band height [mm]")
+    g.add_argument("--rim", type=float, default=6.0, help="top rim height [mm]")
+    g.add_argument("--floor", type=float, default=5.0, help="floor lattice thickness [mm]")
+    g.add_argument("--floor-cell", type=float, default=16.0, help="floor Voronoi seed spacing [mm]")
+    g.add_argument("--floor-strut", type=float, default=4.5, help="floor strut width [mm]")
+    g.add_argument("--eyelet-hole", type=float, default=6.0, help="eyelet hole diameter [mm]")
+    g.add_argument("--eyelet-wire", type=float, default=4.5, help="eyelet ring width [mm]")
+    g.add_argument("--fillet", type=float, default=1.5, help="smooth-union radius at nodes [mm]")
+    g = common.add_argument_group("printability (advanced)")
+    g.add_argument("--min-angle", type=float, default=35.0, help="min strut elevation [deg]")
+    g.add_argument("--max-bridge", type=float, default=10.0, help="max horizontal span of flat bridges [mm]")
+    g.add_argument("--max-arch", type=float, default=25.0, help="max horizontal span of an arch [mm]")
+    g.add_argument("--grade-top", type=float, default=0.25, help="top fraction of height with graded cells")
+    g.add_argument("--grade-scale", type=float, default=0.6, help="cell size factor at the rim")
+    g.add_argument("--merge", type=float, default=3.0, help="merge Voronoi nodes closer than this [mm]")
+    g.add_argument("--layer", type=float, default=0.2, help="layer height for island check [mm]")
+    g = common.add_argument_group("mesh")
+    g.add_argument("--voxel", type=float, default=0.4, help="SDF grid pitch [mm]")
+    g.add_argument("--decimate", type=float, default=0.75, help="fraction of triangles to remove")
+
     p = argparse.ArgumentParser(description="Voronoi orchid basket STL generator")
-    a = p.add_argument
-    a("--size", type=float, default=150.0, help="outer width/depth [mm]")
-    a("--height", type=float, default=100.0, help="body height without eyelets [mm]")
-    a("--corner-r", type=float, default=20.0, help="outer vertical edge radius [mm]")
-    a("--wall", type=float, default=5.0, help="wall thickness [mm]")
-    a("--strut", type=float, default=4.5, help="wall strut width in the wall plane [mm]")
-    a("--edge-round", type=float, default=1.0, help="rounding of strut face edges [mm]")
-    a("--cell", type=float, default=17.0, help="seed spacing of the wall Voronoi [mm]")
-    a("--zstretch", type=float, default=1.2, help="vertical cell elongation factor")
-    a("--min-angle", type=float, default=35.0, help="min strut elevation [deg]")
-    a("--max-bridge", type=float, default=10.0, help="max horizontal span of flat bridges [mm]")
-    a("--max-arch", type=float, default=25.0, help="max horizontal span of an arch [mm]")
-    a("--grade-top", type=float, default=0.25, help="top fraction of height with graded cells")
-    a("--grade-scale", type=float, default=0.6, help="cell size factor at the rim")
-    a("--merge", type=float, default=3.0, help="merge Voronoi nodes closer than this [mm]")
-    a("--band", type=float, default=5.0, help="bottom band height [mm]")
-    a("--rim", type=float, default=6.0, help="top rim height [mm]")
-    a("--floor", type=float, default=5.0, help="floor lattice thickness [mm]")
-    a("--floor-cell", type=float, default=16.0, help="floor Voronoi seed spacing [mm]")
-    a("--floor-strut", type=float, default=4.5, help="floor strut width [mm]")
-    a("--eyelet-hole", type=float, default=6.0, help="eyelet hole diameter [mm]")
-    a("--eyelet-wire", type=float, default=4.5, help="eyelet ring width [mm]")
-    a("--fillet", type=float, default=1.5, help="smooth-union radius at nodes [mm]")
-    a("--voxel", type=float, default=0.4, help="SDF grid pitch [mm]")
-    a("--decimate", type=float, default=0.75, help="fraction of triangles to remove")
-    a("--layer", type=float, default=0.2, help="layer height for island check [mm]")
-    a("--seed", type=int, default=7)
-    a("--out", default="orchid_pot")
-    a("--graph-only", action="store_true", help="stop after the strut graph and its metrics")
-    return p.parse_args()
+    sub = p.add_subparsers(dest="shape", required=True, metavar="SHAPE")
+    b = sub.add_parser("box", parents=[common], help="rounded-square box (default 4 eyelets)",
+                       description="Rounded-square box with planar Voronoi walls.")
+    g = b.add_argument_group("box")
+    g.add_argument("--size", type=float, default=150.0, help="outer width/depth [mm]")
+    g.add_argument("--corner-r", type=float, default=20.0, help="outer vertical edge radius [mm]")
+    b.set_defaults(eyelets_default=4)
+    c = sub.add_parser("cylinder", parents=[common], help="round pot, optionally tapered (default 3 eyelets)",
+                       description="Cylinder or cone frustum with planar Voronoi walls.")
+    g = c.add_argument_group("cylinder")
+    g.add_argument("--diameter", type=float, default=150.0, help="outer diameter at the rim [mm]")
+    g.add_argument("--taper", type=float, default=0.0,
+                   help="wall lean from vertical [deg]; > 0 widens upward (flowerpot), max +-20")
+    c.set_defaults(eyelets_default=3)
+    args = p.parse_args(argv)
+    if args.eyelets is None:
+        args.eyelets = args.eyelets_default
+    del args.eyelets_default
+    if args.eyelets == 1 or args.eyelets < 0:
+        p.error("--eyelets must be 0 or >= 2")
+    if args.shape == "cylinder" and abs(args.taper) > 20:
+        p.error("--taper is limited to +-20 deg (wall lean and the chart approximation)")
+    if args.out is None:
+        args.out = f"orchid_{args.shape}"
+    return args
 
 
 # ---------- geometry helpers ----------
@@ -145,6 +189,110 @@ class WallFrame:
         ry = np.sin(ang) * qx + np.cos(ang) * qy  # core point rotated back onto side 0
         ul = np.where(side, ry + self.c, self.side + self.r * (psi - k * (math.pi / 2)))
         return (k * self.quad + ul) % self.P
+
+    # --- frame interface shared with ConeFrame: vertical walls, chart == real metric ---
+    ku_min = 1.0
+
+    def rise(self, h, tan, z=None):
+        """Vertical rise a strut of chart-horizontal length h needs to reach atan(tan)."""
+        return tan * h
+
+    def hor(self, h, z=None):
+        """Real horizontal length of a chart-horizontal length h at height z."""
+        return h
+
+    def scale(self, z):
+        """(u, z) chart -> local real metric factors at height(s) z."""
+        return np.ones_like(np.asarray(z, float)), 1.0
+
+    def eyelet_u(self, n):
+        # middle of the corner arcs for n = 4; same float expression as before (v0.4.0)
+        return [i * (self.P / n) + self.side + self.r * math.pi / 4 for i in range(n)]
+
+
+class BoxFrame(WallFrame):
+    def __init__(self, args):
+        super().__init__(args.size / 2, args.corner_r, args.wall)
+        self.half_out, self.corner_out = args.size / 2, args.corner_r
+        self.extent = args.size / 2
+        self._dout = None
+
+    def footprint_sdf(self, x, y):
+        return rounded_square_sdf(x, y, self.half_out, self.corner_out)
+
+    def wall_fields(self, X2, Y2, z):
+        """(outer-surface SDF, |distance from the mid-surface|) of the slice at height z."""
+        if self._dout is None:                  # vertical walls: the same for every slice
+            self._dout = rounded_square_sdf(X2, Y2, self.half_out, self.corner_out)
+            self._pw = np.abs(self._dout + self.t / 2)
+        return self._dout, self._pw
+
+    def describe(self):
+        return {"outer_mm": [2 * self.half_out, 2 * self.half_out], "corner_r_mm": self.corner_out}
+
+
+# CTX: Cylinder / cone frustum. Chart u = theta * r_ref (r_ref = mid-surface radius at mid
+#      lattice height); with a taper the chart is not isometric, so lengths use the local
+#      factor ku(z) = r(z) / r_ref and the slant factor 1/cos(taper).
+# Used-by: orchid_pot.py::make_frame
+# Rejected: exact cone development (annular sector): periodicity becomes a rotation and the
+#           band/rim mirror lines become arcs; for |taper| <= 20 deg the chart error is a few %.
+class ConeFrame:
+    def __init__(self, args, z_top):
+        self.t = args.wall
+        self.H = args.height
+        tt = math.radians(args.taper)
+        self.tan_t, self.cos_t = math.tan(tt), math.cos(tt)
+        self.r_top_out = args.diameter / 2
+        self.r_ref = self.r_mid((args.band / 2 + args.height - args.rim / 2) / 2)
+        assert self.r_mid(0) > self.t and self.r_mid(z_top) > self.t, "taper too strong"
+        self.P = 2 * math.pi * self.r_ref
+        self.ku_min = min(self.ku(0.0), self.ku(z_top))
+        self.extent = max(self.r_out(0.0), self.r_out(z_top)) + self.t
+
+    def r_out(self, z):
+        return self.r_top_out - (self.H - np.asarray(z, float)) * self.tan_t
+
+    def r_mid(self, z):
+        return self.r_out(z) - self.t / 2 / self.cos_t
+
+    def ku(self, z):
+        return self.r_mid(z) / self.r_ref
+
+    def rise(self, h, tan, z=0.0):
+        # rise r over tangential run h*ku on a wall leaning by the taper: the strut also
+        # moves radially by r*tan_t, so tan(e) = r / hypot(h*ku, r*tan_t) >= tan
+        return tan * h * float(self.ku(z)) / math.sqrt(1 - (tan * self.tan_t) ** 2)
+
+    def hor(self, h, z=0.0):
+        return h * float(self.ku(z))
+
+    def scale(self, z):
+        return self.ku(z), 1 / self.cos_t
+
+    def eyelet_u(self, n):
+        return [i * (self.P / n) for i in range(n)]
+
+    def unmap_u(self, x, y):
+        return (np.arctan2(y, x) % (2 * math.pi)) * self.r_ref
+
+    def footprint_sdf(self, x, y):
+        return np.hypot(x, y) - float(self.r_out(0.0))
+
+    def wall_fields(self, X2, Y2, z):
+        wn = (np.hypot(X2, Y2) - float(self.r_mid(z))) * self.cos_t   # normal distance to mid-surface
+        return wn - self.t / 2, np.abs(wn)
+
+    def describe(self):
+        return {"outer_dia_bottom/top_mm": [round(2 * float(self.r_out(0.0)), 1), 2 * self.r_top_out],
+                "taper_deg": round(math.degrees(math.atan(self.tan_t)), 2)}
+
+
+def make_frame(args):
+    if args.shape == "box":
+        return BoxFrame(args)
+    z_top = args.height + (args.eyelet_hole + 2 * args.eyelet_wire + 1 if args.eyelets else 0)
+    return ConeFrame(args, z_top)
 
 
 def rounded_square_sdf(x, y, half, r):
@@ -300,9 +448,11 @@ def wall_graph(args, fr, rng, stats):
             continue
         hl = {m: abs(dvec(n, m)[0]) for m in adj[n]}
         lower = [m for m in adj[n] if nodes[m, 1] <= nodes[n, 1]] or adj[n]
-        if any(nodes[n, 1] - nodes[m, 1] >= tan_min * hl[m] for m in lower):
+        # taper metric is always taken at a strut's lower end, here and in classify
+        zn = nodes[n, 1]
+        if any(zn - nodes[m, 1] >= fr.rise(hl[m], tan_min, nodes[m, 1]) for m in lower):
             continue
-        need = min(nodes[m, 1] + tan_min * hl[m] * (1 + 1e-6) for m in lower)
+        need = min(nodes[m, 1] + fr.rise(hl[m], tan_min, nodes[m, 1]) * (1 + 1e-6) for m in lower)
         z_new = min(need, z1)
         lifts.append(z_new - nodes[n, 1])
         nodes[n, 1] = z_new
@@ -314,18 +464,20 @@ def wall_graph(args, fr, rng, stats):
     def classify(i, j):
         d = dvec(i, j)
         hl = abs(d[0])
+        zm = min(nodes[i, 1], nodes[j, 1])
         if anchor(i, j):
             return "plane"
-        if abs(d[1]) >= tan_min * hl:
+        if abs(d[1]) >= fr.rise(hl, tan_min, zm):
             return "steep"
-        return "short" if hl <= args.max_bridge else "long"
+        return "short" if fr.hor(hl, zm) <= args.max_bridge else "long"
 
     arch_tan = {}                                 # per-edge override after a clash
 
     def apex(i, j):
         d = dvec(i, j)
         p = nodes[i] + d / 2
-        p[1] = max(nodes[i, 1], nodes[j, 1]) + arch_tan.get((i, j), tan_arch) * abs(d[0]) / 2
+        zt = max(nodes[i, 1], nodes[j, 1])
+        p[1] = zt + fr.rise(abs(d[0]) / 2, arch_tan.get((i, j), tan_arch), zt)
         return p
 
     def shape(e):
@@ -363,7 +515,8 @@ def wall_graph(args, fr, rng, stats):
     cls = {e: classify(*e) for e in E}
     n_flat = 0
     for e in E:
-        if cls[e] == "long" and (apex(*e)[1] > z1 or abs(dvec(*e)[0]) > args.max_arch):
+        if cls[e] == "long" and (apex(*e)[1] > z1 or
+                                 fr.hor(abs(dvec(*e)[0]), min(nodes[e[0], 1], nodes[e[1], 1])) > args.max_arch):
             cls[e] = "short"; n_flat += 1
 
     removed_nodes = 0
@@ -391,7 +544,8 @@ def wall_graph(args, fr, rng, stats):
         clash = None
         for e in sorted((e for e in E if cls[e] == "long"), key=lambda e: -abs(dvec(*e)[0])):
             a, m, b = shape(e)
-            if clashes(a, m, {e[0]}, e, S, args.strut) or clashes(m, b, {e[1]}, e, S, args.strut):
+            clear = args.strut / float(fr.scale(min(nodes[e[0], 1], nodes[e[1], 1]))[0])  # chart units
+            if clashes(a, m, {e[0]}, e, S, clear) or clashes(m, b, {e[1]}, e, S, clear):
                 clash = e
                 break
         if clash is None:
@@ -434,7 +588,7 @@ def rim_gussets(args, fr, polys, stats):
     gaps = [((us[(k + 1) % len(us)] - u) % fr.P, u) for k, u in enumerate(us)]
     stats["rim_gaps_mm_p50/max"] = [round(float(np.median([g for g, _ in gaps])), 1),
                                     round(float(max(g for g, _ in gaps)), 1)]
-    return [(u + g / 2, g) for g, u in gaps if g > args.strut]
+    return [(u + g / 2, g) for g, u in gaps if fr.hor(g, zr) > args.strut]
 
 
 def wall_metrics(args, fr, polys, stats, res=0.5):
@@ -487,8 +641,8 @@ def wall_metrics(args, fr, polys, stats, res=0.5):
         "height_to_width_p90": round(float(np.percentile(heights[big] / np.maximum(widths[big], res), 90)), 1)}
 
 
-def floor_segments(args, rng):
-    h = args.size / 2
+def floor_segments(args, fr, rng):
+    h = fr.extent
     pts = poisson(rng, [-h - 15, -h - 15], [h + 15, h + 15], args.floor_cell, tries=40000)
     vor = Voronoi(pts)
     segs = []
@@ -496,7 +650,7 @@ def floor_segments(args, rng):
         if -1 in rv:
             continue
         a, b = vor.vertices[rv[0]], vor.vertices[rv[1]]
-        if rounded_square_sdf(*((a + b) / 2), h, args.corner_r) < 0:
+        if fr.footprint_sdf(*((a + b) / 2)) < 0:
             segs.append((a, b))
     return segs
 
@@ -544,14 +698,18 @@ def wall_pattern(args, fr, polys, gussets, Z, ez):
             if iu1 <= iu0 or iz1 <= iz0:
                 continue
             Q = np.stack(np.broadcast_arrays((U[iu0:iu1] + sh)[None, :], Z[iz0:iz1][:, None]), -1)
+            # chart -> local real metric of each row (all ones for vertical walls); the
+            # dist callbacks scale their own geometry with the same factors M
+            ku, kz = fr.scale(Z[iz0:iz1])
+            M = np.stack(np.broadcast_arrays(ku[:, None], np.full((iz1 - iz0, 1), kz)), -1)
             sl = (slice(iz0, iz1), slice(iu0, iu1))
-            F[sl] = smin(F[sl], dist(Q), args.fillet)
+            F[sl] = smin(F[sl], dist(Q * M, M), args.fillet)
 
-    pad = args.strut / 2 + args.fillet + 1
+    pad = (args.strut / 2 + args.fillet + 1) / fr.ku_min
     hw = args.strut / 2
     for p in polys:
         add(p.min(0) - pad, p.max(0) + pad,
-            lambda Q, p=p: np.min([pt_seg_dist(Q, a, b) for a, b in zip(p[:-1], p[1:])], 0) - hw)
+            lambda Q, M, p=p: np.min([pt_seg_dist(Q, a * M, b * M) for a, b in zip(p[:-1], p[1:])], 0) - hw)
     # Rim gussets, grown row by row from the actual strut material. Each row may extend
     # the row below by at most dz / tan(min-angle) sideways (a printable overhang), and
     # only inside a pointed-arch envelope per gap (flanks at min-angle + 5 deg, apex 1 mm
@@ -563,6 +721,8 @@ def wall_pattern(args, fr, polys, gussets, Z, ez):
     zr = args.height - args.rim
     te = math.tan(math.radians(args.min_angle + 5))
     ts = math.tan(math.radians(args.min_angle))
+    ku_r, kz = fr.scale(zr)                        # gussets stay within ~10 mm of the rim
+    ku_r = float(ku_r)
     env = np.zeros(F.shape, bool)
 
     def envelope(um, half, z_line):
@@ -570,13 +730,13 @@ def wall_pattern(args, fr, polys, gussets, Z, ez):
         d_ = (U - um + fr.P / 2) % fr.P - fr.P / 2
         cols = np.abs(d_) < half
         zl = z_line(um + d_[cols])
-        env[:, cols] |= (Z[:, None] >= zl - te * np.abs(d_[cols])) & (Z[:, None] <= zl)
+        env[:, cols] |= (Z[:, None] >= zl - te * (np.abs(d_[cols]) * ku_r)) & (Z[:, None] <= zl)
 
     for um, g in gussets:
         envelope(um, g / 2, lambda u: np.full_like(u, zr + 1.0))
     # exact growth distance per row; a whole-pixel dilation (0.4 instead of 0.57 mm)
     # grows slower than the envelope flanks widen, and the gussets never close
-    grow = dz / ts
+    grow = dz / ts / ku_r
     S = F <= 0
     G = S.copy()
     for k_ in range(1, len(Z)):
@@ -597,21 +757,22 @@ def wall_pattern(args, fr, polys, gussets, Z, ez):
         # signed distance of the grown mask (periodic in u), merged into F
         r0, r1 = max(rows[0] - 8, 0), min(rows[-1] + 9, len(Z))
         T = np.concatenate([G[r0:r1]] * 3, axis=1)
-        sd = (ndimage.distance_transform_edt(~T, sampling=(dz, du))
-              - ndimage.distance_transform_edt(T, sampling=(dz, du)))[:, nu:2 * nu]
+        smp = (dz * kz, du * ku_r)
+        sd = (ndimage.distance_transform_edt(~T, sampling=smp)
+              - ndimage.distance_transform_edt(T, sampling=smp))[:, nu:2 * nu]
         F[r0:r1] = np.minimum(F[r0:r1], sd)
 
     rt = args.eyelet_wire / 2
     Rt = args.eyelet_hole / 2 + rt
-    for k in range(4):                            # one ring at the middle of each corner arc
-        c = np.array([k * fr.quad + fr.side + fr.r * math.pi / 4, ez])
-        add(c - Rt - rt - 1, c + Rt + rt + 1,
-            lambda Q, c=c: np.abs(np.linalg.norm(Q - c, axis=-1) - Rt) - rt)
+    for uc in fr.eyelet_u(args.eyelets):
+        c = np.array([uc, ez])
+        add(c - (Rt + rt + 1) / fr.ku_min, c + (Rt + rt + 1) / fr.ku_min,
+            lambda Q, M, c=c: np.abs(np.linalg.norm(Q - c * M, axis=-1) - Rt) - rt)
     return U, F, stats_g
 
 
 def build_sdf(args, fr, polys, gussets, fsegs, stats):
-    half = args.size / 2
+    half = fr.extent
     H = args.height
     k = args.fillet
     rt = args.eyelet_wire / 2
@@ -621,15 +782,15 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     # odd origin offset: no grid sample lands exactly on a flat face (z=0, band top, ...),
     # which would make marching cubes emit zero-area slivers
     o = 0.137 * args.voxel
-    g = Grid([-half - m + o, -half - m + o, -1.0 + o], [half + m, half + m, ez + Rt + rt + 1.0],
-             args.voxel)
+    ztop = ez + Rt + rt + 1.0 if args.eyelets else H + 1.0
+    g = Grid([-half - m + o, -half - m + o, -1.0 + o], [half + m, half + m, ztop], args.voxel)
     U, F, stats_g = wall_pattern(args, fr, polys, gussets, g.ax[2], ez)
     stats.update(stats_g)
 
     X2 = g.ax[0][:, None]; Y2 = g.ax[1][None, :]
-    dout = rounded_square_sdf(X2, Y2, half, args.corner_r)
+    dfoot = fr.footprint_sdf(X2, Y2)
     uxy = fr.unmap_u(*np.broadcast_arrays(X2, Y2))
-    fl = np.full(dout.shape, 10.0)
+    fl = np.full(dfoot.shape, 10.0)
     fw = args.floor_strut / 2
     for a, b in fsegs:
         lo_ = np.minimum(a, b) - fw - 1; hi_ = np.maximum(a, b) + fw + 1
@@ -638,12 +799,12 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
         px, py = X[:, :, 0] - a[0], Y[:, :, 0] - a[1]
         t = np.clip((px * ab[0] + py * ab[1]) / ab.dot(ab), 0, 1)
         fl[sl[:2]] = np.minimum(fl[sl[:2]], np.hypot(px - t * ab[0], py - t * ab[1]) - fw)
-    fl = np.maximum(fl, dout + 1.0)
-    pw = np.abs(dout + fr.t / 2)
+    fl = np.maximum(fl, dfoot + 1.0)
 
     zc_b = args.band / 2 - 1
     for iz, z in enumerate(g.ax[2]):
         dpat = np.interp(uxy, U, F[iz], period=fr.P)
+        _, pw = fr.wall_fields(X2, Y2, z)
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
         band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
@@ -664,9 +825,17 @@ def clean(mesh):
     return mesh
 
 
-def to_mesh(g):
+def to_mesh(g, stats):
     v, f, _, _ = marching_cubes(g.D, level=0.0, spacing=(g.h,) * 3)
     mesh = clean(trimesh.Trimesh(v + g.lo, f, process=True))
+    # Sub-mm^3 shells are voids enclosed in the material (seen with tapered walls: smooth-min
+    # pockets between near-touching fields); dropping their shell fills them. They also
+    # made the decimated mesh non-watertight.
+    parts = mesh.split(only_watertight=False)
+    if len(parts) > 1:
+        keep = [q for q in parts if abs(q.volume) >= 1.0]
+        stats["micro_voids_filled"] = len(parts) - len(keep)
+        mesh = trimesh.util.concatenate(keep)
     if mesh.volume < 0:
         mesh.invert()
     return mesh
@@ -748,18 +917,18 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
 def main():
     args = parse_args()
     rng = np.random.default_rng(args.seed)
-    fr = WallFrame(args.size / 2, args.corner_r, args.wall)
-    stats = {"params": vars(args)}
+    fr = make_frame(args)
+    stats = {"params": vars(args), "shape": {"type": args.shape, **fr.describe()}}
     t0 = time.time()
     polys, gussets = wall_graph(args, fr, rng, stats)
-    fsegs = floor_segments(args, rng)
+    fsegs = floor_segments(args, fr, rng)
     print(f"graph {time.time() - t0:.1f}s: {len(polys)} wall struts, {len(fsegs)} floor struts")
     if args.graph_only:
         print(json.dumps({k: v for k, v in stats.items() if k != "params"}, indent=1))
         return
     g = build_sdf(args, fr, polys, gussets, fsegs, stats)
     print(f"sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
-    mesh = to_mesh(g)
+    mesh = to_mesh(g, stats)
     del g
     print(f"mesh {time.time() - t0:.1f}s {len(mesh.faces)} tris")
     # quadric decimation occasionally leaves a non-manifold spot; retry milder once

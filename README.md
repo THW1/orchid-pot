@@ -1,9 +1,15 @@
 # Voronoi orchid basket generator
 
-`orchid_pot.py` generates a printable STL of a hanging orchid basket (Vanda style). It is
-a rounded-square box with planar Voronoi walls and floor, a solid bottom band, a top rim
-and four hanging eyelets. It is tuned for PETG with a 0.4 mm nozzle, printed upright
-without supports.
+`orchid_pot.py` generates a printable STL of an orchid basket or pot (Vanda style), with
+planar Voronoi walls and floor, a solid bottom band, a top rim and optional hanging
+eyelets. The shape is chosen as a subcommand:
+
+| Shape | Description | Eyelets (default) |
+|---|---|---|
+| `box` | rounded-square box | 4, at the corners |
+| `cylinder` | cylinder, or with `--taper` a cone frustum (flowerpot) | 3 |
+
+It is tuned for PETG with a 0.4 mm nozzle, printed upright without supports.
 
 Design rationale and rejected alternatives are in the context header of `orchid_pot.py`.
 
@@ -17,13 +23,16 @@ A full run takes about 30 s and peaks at about 1.3 GB RAM (default settings, 6 c
 ## Usage
 
 ```bash
-python3 orchid_pot.py                          # defaults → orchid_pot.stl + orchid_pot_report.json
-python3 orchid_pot.py --seed 3 --out pot_s3    # another random pattern, other file names
-python3 orchid_pot.py --graph-only --seed 3    # pattern metrics only (~2 s), no mesh
-blender -b --factory-startup --python render.py -- $PWD/orchid_pot.stl $PWD/preview
+python3 orchid_pot.py box                              # → orchid_box.stl + orchid_box_report.json
+python3 orchid_pot.py cylinder --taper 8               # flowerpot, 150 mm at the rim
+python3 orchid_pot.py cylinder --taper 12 --eyelets 0  # standing pot, no eyelets
+python3 orchid_pot.py box --seed 3 --out pot_s3        # another random pattern, other file names
+python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~2 s), no mesh
+python3 orchid_pot.py cylinder --help                  # options for that shape
+blender -b --factory-startup --python render.py -- $PWD/orchid_box.stl $PWD/preview_box
 ```
 
-`render.py` needs **absolute** paths. It writes `preview_{persp,side,top,detail}.png`.
+`render.py` needs **absolute** paths. It writes `<prefix>_{persp,side,top,detail}.png`.
 
 **Workflow:** compare seeds and parameters with `--graph-only` first, then build the mesh,
 then check the report and previews.
@@ -33,11 +42,24 @@ then check the report and previews.
 Lengths are in mm. Recommended ranges are based on the runs in this project. Values
 outside them work, but check the report.
 
+### Shape options
+
+| Shape | Option | Default | Recommended | Meaning |
+|---|---|---|---|---|
+| `box` | `--size` | 150 | – | Outer width and depth |
+| `box` | `--corner-r` | 20 | 15–25 | Outer radius of the vertical edges; must exceed `--wall`/2 |
+| `cylinder` | `--diameter` | 150 | – | Outer diameter at the rim |
+| `cylinder` | `--taper` | 0 | −15…+15 | Wall lean from vertical in degrees; > 0 widens upward. Limit ±20 |
+
+At `--taper 8` the floor diameter is 121.9 mm; at `--taper 15` it is 96.4 mm (for a
+150 mm rim, 100 mm height).
+
+### Common options (all shapes)
+
 | Option | Default | Recommended | Meaning |
 |---|---|---|---|
-| `--size` | 150 | – | Outer width and depth |
 | `--height` | 100 | – | Body height; the eyelets add about 11 mm |
-| `--corner-r` | 20 | 15–25 | Outer radius of the vertical edges; must exceed `--wall`/2 |
+| `--eyelets` | box 4, cylinder 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 4 = at the corners |
 | `--wall` | 5 | 4–6 | Wall thickness |
 | `--strut` | 4.5 | 4–5 | Wall strut width (about 10 lines at 0.42 mm) |
 | `--edge-round` | 1.0 | 0.5–1.5 | Rounding of the strut face edges |
@@ -61,10 +83,10 @@ outside them work, but check the report.
 | `--decimate` | 0.75 | 0.6–0.8 | Fraction of triangles removed; 0 = off. Retries once milder if the result is not watertight |
 | `--layer` | 0.2 | your layer height | Layer height used by the island and cantilever checks |
 | `--seed` | 7 | any | Random pattern |
-| `--out` | `orchid_pot` | – | Output file prefix |
+| `--out` | `orchid_<shape>` | – | Output file prefix |
 | `--graph-only` | off | – | Stop after the pattern and its metrics |
 
-### Effect of `--zstretch` (seed 7, other options default)
+### Effect of `--zstretch` (box, seed 7, other options default)
 
 | zstretch | Nodes lifted | Struts kept flat | Opening height p90 / max | Largest opening (inscribed) |
 |---|---|---|---|---|
@@ -83,6 +105,16 @@ Lower values give rounder cells but more flat bridges.
   unless an arch would hit a neighbouring strut.
 - **Rim:** the rim gets gussets in each gap, grown layer by layer from the struts. The
   rim then never bridges more than a few mm.
+
+## Tests
+
+```bash
+python3 -m pytest -q tests/     # ~100 s
+```
+
+The tests check that box, cylinder and cylinder `--taper 8` (seed 7) give byte-identical
+STLs and reports compared with `tests/golden/`. The box hash is the v0.4.0 release.
+Regenerate the golden files only for an intended output change.
 
 ## Report (`<out>_report.json`)
 
@@ -108,12 +140,16 @@ showed no warning there.
 - Print upright on the floor, without supports. Optionally paint support on any strut
   listed under `cantilevers`.
 - Lattices string easily with PETG, so tune retraction and travel.
-- The weight is about 210–220 g with defaults; the slicer gives the exact value.
+- The weight with defaults is about 210–220 g (box) and about 170 g (cylinder); the
+  slicer gives the exact value.
 
 ## Limitations
 
-- On the curved corners, struts are about 14% wider on the outer face than on the inner
-  face.
+- Box: on the curved corners, struts are about 14% wider on the outer face than on the
+  inner face.
+- Tapered cylinder: the pattern is computed in an approximate unrolled layout, so cells
+  get slightly larger toward the wider end. Opening sizes in the report are in those
+  layout units.
 - Struts where an arch would collide stay as flat bridges, with no gusset underneath.
   Long ones show up in `cantilevers`.
 - The gussets show a slight 0.4 mm staircase texture (the voxel pitch).
