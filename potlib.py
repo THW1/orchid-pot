@@ -3,8 +3,10 @@
 # Purpose:     Shape-independent helpers shared by all shapes: SDF primitives, Poisson
 #              seeding, segment distances, the voxel Grid, floor pattern, wall metrics,
 #              meshing (marching cubes, cleanup, decimation) and all report checks.
-# Decisions:   Moved verbatim out of orchid_pot.py (v0.5.0) so the experimental orb.py
-#              can reuse them without importing or touching the box/cylinder pipeline.
+# Decisions:   Split out of orchid_pot.py (v0.5.0, verbatim move) so orb.py can reuse the
+#              helpers without importing or touching the box/cylinder pipeline. Later
+#              additions shared by both pipelines: grade_fraction, floor_field,
+#              require_rim_crossings (v0.6.1) and finish(extra_checks=...).
 #              Behaviour changes here affect every shape: run tests/ (byte-identical
 #              goldens for box and cylinder).
 # Related:     Used by orchid_pot.py (box, cylinder) and orb.py.
@@ -296,6 +298,11 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
     return out
 
 
+# CTX: Common tail of every pipeline: mesh -> decimate (one milder retry) -> checks ->
+#      write. extra_checks runs after check_mesh and before writing, so its stats land in
+#      the report.
+# Used-by: orchid_pot.py::main, orb.py::run
+# Invariant: g.D is released before decimation; callers must not use the grid afterwards.
 def finish(g, args, stats, t0, extra_checks=None):
     """Mesh the SDF grid, decimate, check, write <out>.stl and <out>_report.json.
     extra_checks(mesh, stats): optional shape-specific checks (orb: stability)."""

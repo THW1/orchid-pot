@@ -119,6 +119,11 @@ def steep_enough(p, q, tan):
 
 # ---------- pattern ----------
 
+# CTX: Returns struts as 3D polylines ON the mid-surface (anchor edges excluded); every
+#      consumer (orb_metrics, rim_gaps, build_orb_sdf) relies on points lying on it.
+# Used-by: orb.py::run
+# Invariant: point index ranges [0, n) seeds, [n, n + nb) band mirrors, [n + nb, ...) rim
+#            mirrors decide which vertices are anchors; keep them in sync with the masks.
 def orb_graph(args, sh, rng, stats):
     z0, z1 = args.band / 2 + 0.5, sh.H - args.rim / 2           # anchor latitudes (as box)
     p0, p1 = float(sh.phi_of_z(z0)), float(sh.phi_of_z(z1))
@@ -454,6 +459,11 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     return g
 
 
+# CTX: Layer-wise gusset growth in the voxel grid (z slices = print layers).
+# Used-by: orb.py::build_orb_sdf | Depends: orb.py::rim_gaps (gap list contract)
+# Invariant: runs after all struts, rim and eyelets are in g.D; merges the ADDED voxels
+#            only (blur + smooth union), same rule as orchid_pot.py::wall_pattern.
+# Rejected: SDF of all grown material (shifted every surface ~0.2 mm, v0.6.0).
 def grow_rim_gussets(args, sh, g, gaps, sel_idx, aw, stats):
     """Per voxel slice (= print layers): material may extend the layer below by
     dz / tan(min-angle) sideways, inside the shell and inside a pointed-arch envelope per

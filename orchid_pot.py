@@ -32,10 +32,10 @@
 #              lifting was in place, so the plain random (Poisson) Voronoi stays.
 #              Shapes are frames (BoxFrame, ConeFrame) behind one interface: rise, hor,
 #              scale, unmap_u, wall_fields, footprint_sdf, eyelet_u. The pipeline never
-#              branches on the shape. BoxFrame returns the v0.4.0 expressions exactly, so
-#              the box STL is byte-identical to v0.4.0 (tests/test_regression.py). The
-#              experimental orb is meant to live in its own module, not as a third frame
-#              here (its walls lean and are not developable).
+#              branches on the shape. BoxFrame returned the v0.4.0 expressions exactly
+#              (box STL byte-identical to v0.4.0 until the intended v0.6.1 gusset change;
+#              tests/test_regression.py guards it). The experimental orb lives in orb.py,
+#              not as a third frame here (its walls lean and are not developable).
 #              A taper's metric factor is always taken at a strut's lower end. Lift and
 #              classify must agree on it; with mismatched heights, the -8 deg taper lost
 #              34 nodes to the safety net.
@@ -569,6 +569,8 @@ def rim_gussets(args, fr, polys, stats):
 #      build_sdf reads F[iz] per slice and interpolates over u with period P.
 # Used-by: orchid_pot.py::build_sdf | Depends: orchid_pot.py::rim_gussets (gap list contract)
 # Invariant: gussets grow from S = F <= 0, so all struts must be in F before the growth step.
+#            Gussets merge as SDF of the ADDED pixels, 1-px blur, smooth union; the same
+#            rule as orb.py::grow_rim_gussets (change both together).
 def wall_pattern(args, fr, polys, gussets, Z, ez):
     """2D smooth-min SDF of wall struts, rim gussets and eyelet rings on the unrolled
     wall, rows = Z."""

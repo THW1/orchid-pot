@@ -53,6 +53,11 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
   (gap midpoint u, gap width), only gaps wider than one strut.
 - `orchid_pot.py::wall_pattern` → `orchid_pot.py::build_sdf`: F rows equal the voxel
   z axis.
+- `orchid_pot.py::wall_pattern` ↔ `orb.py::grow_rim_gussets`: the same gusset merge
+  rule (SDF of the added material, 1-px blur, smooth union); change both together.
+- `potlib.py::floor_field`, `potlib.py::grade_fraction`, `potlib.py::finish` are shared
+  by `orchid_pot.py::build_sdf` / `orchid_pot.py::wall_graph` / `orchid_pot.py::main`
+  and the matching orb functions.
 - `orb.py` → `potlib.py` only. The orb never imports `orchid_pot.py`, and
   `orchid_pot.py` imports `orb` only for the `orb` subcommand.
 - `orb.py::run` sets `args.height` to the derived rim height before the potlib checks,
