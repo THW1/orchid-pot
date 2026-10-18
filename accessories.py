@@ -296,6 +296,7 @@ def tray_sdf(args, tg, stats, clip_params=()):
                               "clip_arm_length_mm": round(L, 1),
                               "clip_hook_reach_mm": round(cg["reach"], 2), "clip_hook_on_flat_mm": args.clip_hook,
                               "clip_snap_deflection_mm": round(cg["defl"], 2),
+                              "clip_vertical_play_mm": round(band_top_allowance(args) + cc, 2),
                               # cantilever snap-fit root strain 1.5 t y / L^2 (PETG guideline <= 2 %)
                               "clip_strain_pct": round(150 * ct * cg["defl"] / L ** 2, 2)})
     return g
@@ -422,8 +423,9 @@ def fit_checker(args, kind, fp, zb, clip_xy=()):
     """extra_checks for finish(): if the pot's STL and report are found (next to the part,
     or where --from-report points), verify the fingerprints and the real fit by mesh
     intersection, with the pot at the exact height zb (not the rounded report value).
-    Seated: no overlap. Clip: lifted 1.5 mm, every clip must catch (intersection pieces are
-    assigned to the nearest clip). Planter: the pot also slides in freely (10/30/60 mm
+    Seated: no overlap. Clip: lifted by the hook's vertical play (band-top allowance +
+    clearance) + 0.75 mm, every clip must catch (intersection pieces are assigned to the
+    nearest clip). A fixed 1.5 mm lift false-failed with --clip-clearance 1 (play 1.75 mm). Planter: the pot also slides in freely (10/30/60 mm
     above). Missing pot files: skipped, with a note in the report."""
     prefix = getattr(args, "pot_out", None) or args.out
     pot_stl, pot_rep = prefix + ".stl", prefix + "_report.json"
@@ -458,24 +460,29 @@ def fit_checker(args, kind, fp, zb, clip_xy=()):
             ok = ok and max(ins) <= 0.05
         elif kind == "clip":
             cxy = np.asarray(clip_xy)
-            hit = {int(np.argmin(np.linalg.norm(cxy - q.centroid[:2], axis=1))) for q in overlap(1.5)[1]}
-            res.update({"lifted_1.5mm_clips_engaged": len(hit), "clips": len(cxy)})
+            lift = band_top_allowance(args) + args.clip_clearance + 0.75
+            hit = {int(np.argmin(np.linalg.norm(cxy - q.centroid[:2], axis=1))) for q in overlap(lift)[1]}
+            res.update({"lift_mm": round(lift, 2), "lifted_clips_engaged": len(hit), "clips": len(cxy)})
             ok = ok and len(hit) == len(cxy)
         stats["fit_check"] = {"ok": ok, **res}
     return check
 
 
 def report_fit(stats, out, part):
-    """A part that fails the fit check is not left on disk as a printable STL."""
+    """A part that fails the fit check is not left on disk as a printable STL. Returns the
+    error text (None if fine); run() builds the remaining parts and fails at the end."""
     fc = stats["fit_check"]
     if fc["ok"] is False:
         if os.path.exists(out + ".stl"):
             os.remove(out + ".stl")
-        raise SystemExit(f"error: {part} does not fit the pot ({out}.stl removed, report kept): {fc}")
+        msg = f"error: {part} does not fit the pot ({out}.stl removed, report kept): {fc}"
+        print(msg)
+        return msg
     if fc["ok"] is None and stats.get("tray", {}).get("clips"):
         print("WARNING: clip tray not checked against the pot (pot files not found); placement "
               "comes from the strut paths, the band-top height is calibrated, not measured")
     print("fit check:", fc)
+    return None
 
 
 def _with_height(a, args):
@@ -487,7 +494,15 @@ def _with_height(a, args):
 
 def run(args, parts, geom, struts=None):
     t0 = time.time()
+    errors = []
     tg = TrayGeometry(args, geom)
+    if "tray" in parts and args.tray == "clip":
+        # the hook must end on the band's flat top: band width minus the edge rounding on both
+        # sides (horizontal); a longer hook passes the inner edge and the snap deflection explodes
+        flat = tg.band_w - 2 * BAND_EDGE_ROUND * tg.band_w / args.wall
+        if args.clip_hook > flat:
+            raise SystemExit(f"error: --clip-hook {args.clip_hook} exceeds the flat band top "
+                             f"({flat:.2f} mm for --wall {args.wall}); use <= {flat:.2f}")
     if "tray" in parts:
         a = copy.copy(args)
         # height far above the part: potlib's rim/eyelet zones then never apply to a tray
@@ -504,7 +519,7 @@ def run(args, parts, geom, struts=None):
         clip_xy = pts + nrm * (tg.band_w / 2 + args.clip_clearance)
         finish(g, a, stats, t0, extra_checks=fit_checker(args, "clip" if len(cp) else "saucer", fp,
                                                          a.tray_floor + a.standoff, clip_xy))
-        report_fit(stats, a.out, "tray")
+        errors.append(report_fit(stats, a.out, "tray"))
     if "planter" in parts:
         a = copy.copy(args)
         a.out, a.height, a.eyelets = args.out + "_planter", 1e6, 0
@@ -514,4 +529,7 @@ def run(args, parts, geom, struts=None):
         print(f"planter sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
         zb = a.planter_floor + (6.0 if a.standoff is None else a.standoff)
         finish(g, a, stats, t0, extra_checks=fit_checker(args, "planter", fp, zb))
-        report_fit(stats, a.out, "planter")
+        errors.append(report_fit(stats, a.out, "planter"))
+    errors = [e for e in errors if e]
+    if errors:                                 # after all parts are built
+        raise SystemExit("\n".join(errors))

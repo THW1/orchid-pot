@@ -82,7 +82,7 @@ def test_tray_refuses_foreign_pot_and_from_report(tmp_path):
     good = run("box", "--from-report", str(pot) + "_report.json", "--parts", "tray", "--tray", "clip")
     assert good.returncode == 0
     fc = json.loads((tmp_path / "pot_tray_clip_report.json").read_text())["fit_check"]
-    assert fc["ok"] and fc["seated_overlap_mm3"] <= 0.05 and fc["lifted_1.5mm_clips_engaged"] == 4
+    assert fc["ok"] and fc["seated_overlap_mm3"] <= 0.05 and fc["lifted_clips_engaged"] == 4
 
 
 def test_planter_box_fits_repo_pot(tmp_path):
@@ -97,3 +97,16 @@ def test_planter_box_fits_repo_pot(tmp_path):
     assert r["stl_roundtrip_watertight"] and r["bodies"] == 1 and r["unsupported_islands"] == 0
     fc = r["fit_check"]
     assert fc["ok"] and max(fc["insertion_overlap_mm3_at_10/30/60mm"]) <= 0.05
+
+
+def test_ignored_accessory_options_are_errors():
+    """--clip-* without --tray clip (and similar) must fail loudly, not build a part without
+    clips (seen in practice); a hook longer than the flat band top must be refused."""
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("cylinder", "--parts", "pot,tray", "--clip-width", "3", "--graph-only")
+    assert r.returncode == 2 and "only apply to the clip tray" in r.stderr
+    r = run("box", "--planter-gap", "6")
+    assert r.returncode == 2 and "need planter in --parts" in r.stderr
+    r = run("cylinder", "--wall", "4", "--parts", "tray", "--tray", "clip", "--clip-hook", "3")
+    assert r.returncode != 0 and "exceeds the flat band top" in r.stderr

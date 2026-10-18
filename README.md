@@ -154,6 +154,13 @@ Below about 50°, few strut directions can still be printed near the floor and o
 
 **Clip tray:** flexible arms rise beside the bottom band. Their hooks snap over the band top
 into lattice openings and sit on the flat band top.
+- **Clip options:** `--clip-*` options need `--tray clip` and `tray` in `--parts`; otherwise
+  the run stops with an error, because a saucer has no clips. The planter never has clips;
+  it holds the pot with feet and ribs.
+- **Hook limit:** `--clip-hook` must stay on the flat band top, at most band width − 2 ×
+  1.5 mm rounding (for example 1.0 mm at `--wall 4`).
+- **Vertical play:** the hook's vertical play is about band-top allowance + `--clip-clearance`
+  (`clip_vertical_play_mm`). The clearance applies sideways and vertically.
 - **Placement:** clip positions are checked against the strut paths themselves, over the
   whole hook height: at least 1.5 mm to every strut surface (`clip_strut_clearance_mm`).
 - **Negative taper:** the band is widest at the bottom, so the arm stands further out and

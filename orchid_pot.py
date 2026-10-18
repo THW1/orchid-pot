@@ -67,6 +67,7 @@
 import argparse
 import json
 import math
+import sys
 import time
 
 import numpy as np
@@ -175,6 +176,7 @@ def parse_args(argv=None):
                    help="wall angle from horizontal at floor and opening [deg]; sets floor/opening/height")
     o.set_defaults(eyelets_default=3)
     args = p.parse_args(argv)
+    check_unused_options(p, args, sys.argv[1:] if argv is None else argv)
     if args.from_report:
         apply_report(p, args)
     if args.eyelets is None:
@@ -212,6 +214,26 @@ def parse_args(argv=None):
     if args.out is None:
         args.out = f"orchid_{args.shape}"
     return args
+
+
+def check_unused_options(p, args, argv):
+    """Accessory options given on the command line that the requested parts would ignore are
+    an error, not silently dropped (a user passed --clip-* without --tray clip and got a
+    saucer without clips)."""
+    given = {t.split("=")[0] for t in argv if t.startswith("--")}
+    parts = {s.strip() for s in args.parts.split(",")}
+    clip = sorted(o for o in given if o.startswith("--clip"))
+    if clip and not ("tray" in parts and args.tray == "clip"):
+        p.error(f"{', '.join(clip)} only apply to the clip tray: add --tray clip and tray to --parts "
+                f"(the default tray is a saucer without clips; the planter has feet and ribs, no clips)")
+    tray = sorted(o for o in given if o.startswith("--tray"))
+    if tray and "tray" not in parts:
+        p.error(f"{', '.join(tray)} need tray in --parts")
+    if "--standoff" in given and not parts & {"tray", "planter"}:
+        p.error("--standoff needs tray or planter in --parts")
+    planter = sorted(o for o in given if o.startswith("--planter"))
+    if planter and "planter" not in parts:
+        p.error(f"{', '.join(planter)} need planter in --parts")
 
 
 # options that belong to this run, not to the pot (never taken from --from-report)
