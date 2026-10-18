@@ -161,6 +161,10 @@ into lattice openings and sit on the flat band top.
   1.5 mm rounding (for example 1.0 mm at `--wall 4`).
 - **Vertical play:** the hook's vertical play is about band-top allowance + `--clip-clearance`
   (`clip_vertical_play_mm`). The clearance applies sideways and vertically.
+- **Spread:** the clips are placed as an evenly spaced set, rotated as a whole to fit the
+  lattice. Neighbours are guaranteed at least 75 % of the even spacing apart (3 clips:
+  ≥ 90°); in tests 97–99.6 % were reached (`clip_spacing_min_pct_of_even`). If the lattice
+  leaves no room, the run stops with hints.
 - **Placement:** clip positions are checked against the strut paths themselves, over the
   whole hook height: at least 1.5 mm to every strut surface (`clip_strut_clearance_mm`).
 - **Negative taper:** the band is widest at the bottom, so the arm stands further out and

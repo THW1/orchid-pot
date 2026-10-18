@@ -3,6 +3,13 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.8.3 (2026-10-18)
+- Clips are placed as an evenly spaced set, rotated as a whole to fit the lattice, with a
+  guaranteed minimum spacing of 75 % of the even spacing. Before, each clip took its
+  nearest free spot on its own, and two clips could end up about 10° apart.
+- Measured over 7 seeds: round shapes 115–120° (was 92–119°), box 86–89° (was 81–86°).
+- New report fields `clip_spacing_min_pct_of_even` and `clip_shift_from_targets_mm`.
+
 ## v0.8.2 (2026-10-18)
 - Accessory options that the requested parts would ignore are now an error: `--clip-*`
   without `--tray clip`, `--tray-*` without `tray`, `--planter-*` without `planter` in

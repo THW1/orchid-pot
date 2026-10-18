@@ -60,6 +60,7 @@ def band_top_allowance(args):
 
 CLIP_STRUT_MARGIN = 1.5        # mm between a clip and a strut surface (covers the strut fillet)
 CLIP_LIP_H = 2.0               # hook (lip) height above its catch face: geometry and clearance check
+CLIP_MIN_SPACING = 0.75        # neighbouring clips at least 75 % of the even spacing apart
 # The band's outer top edge is rounded with r = 1.5 mm in the wall's normal direction
 # (rounded_box2 in orchid_pot.build_sdf and orb.build_orb_sdf); horizontally that is
 # 1.5 * band_w / wall (orb at 55 deg: 1.83 mm). A hook that only reaches the rounding acts as
@@ -148,10 +149,9 @@ def place_clips(tg, args, struts, stats):
     """Clip parameters. A position is free if the clip's hook region (its width along the
     band x the hook's height range) keeps CLIP_STRUT_MARGIN from every strut surface, i.e.
     strut/2 + margin from the strut centre lines, checked over the whole hook height against
-    the strut paths themselves (works without the pot STL). Each target (box: side centres,
-    round: even angles) takes the nearest free position; clips stay 2 clip widths apart.
-    Rejected: a gap width measured at one height (struts at 35 deg move 1.4 mm sideways per
-    mm of height, so they could cut into the hook)."""
+    the strut paths themselves (works without the pot STL). The clip set is placed jointly,
+    evenly spread (see below). Rejected: a gap width measured at one height (struts at
+    35 deg move 1.4 mm sideways per mm of height, so they could cut into the hook)."""
     n = args.clips if args.clips is not None else (4 if tg.shape == "box" else 3)
     z_lo = args.band + band_top_allowance(args) + args.clip_clearance
     z_hi = z_lo + CLIP_LIP_H
@@ -165,17 +165,41 @@ def place_clips(tg, args, struts, stats):
     dz = np.maximum(np.maximum(pts[None, :, 1] - z_hi, z_lo - pts[None, :, 1]), 0)
     clear = np.hypot(dx, dz).min(axis=1) - args.strut / 2     # to the strut surface
     free = clear >= CLIP_STRUT_MARGIN
-    params, clears = [], []
-    for t in tg.clip_targets(n):
-        ok = free.copy()
-        for c in params:
-            ok &= np.abs((cand - c + L / 2) % L - L / 2) >= 2 * args.clip_width
-        if not ok.any():
-            raise SystemExit("error: not enough free lattice room above the band for the clips")
-        d = np.abs((cand - t * tg.arc + L / 2) % L - L / 2)
-        k = int(np.argmin(np.where(ok, d, np.inf)))
-        params.append(cand[k]); clears.append(round(float(clear[k]), 2))
-    stats["clip_strut_clearance_mm"] = clears
+    # Joint placement: rotate the evenly spaced clip set as a whole; every clip snaps to the
+    # nearest free position within a tolerance that grows until all clips find one. The
+    # smallest tolerance wins (ties: rotation nearest the preferred targets, box = side
+    # centres). The tolerance is capped so neighbours stay >= CLIP_MIN_SPACING of the even
+    # spacing apart. Rejected: placing each clip on its own (two clips could end up ~10 deg
+    # apart, reported from a print).
+    fpos = cand[free]
+    if not len(fpos):
+        raise SystemExit("error: no free lattice room above the band for a clip this wide; try a "
+                         "narrower --clip-width, a larger --cell or another --seed")
+    spacing = L / n
+    base = np.array(tg.clip_targets(n)) * tg.arc
+    tol_max = spacing * (1 - CLIP_MIN_SPACING) / 2
+    offs = np.arange(-spacing / 2, spacing / 2, 0.5)
+    best = None
+    for tol in np.arange(0.0, tol_max + 0.25, 0.5):
+        for off in sorted(offs, key=abs):
+            tgt = (base + off) % L
+            dd = np.abs((fpos[None, :] - tgt[:, None] + L / 2) % L - L / 2)
+            k = dd.argmin(axis=1)
+            if np.all(dd[np.arange(n), k] <= tol):
+                best = (tol, off, fpos[k])
+                break
+        if best:
+            break
+    if best is None:
+        raise SystemExit(f"error: the lattice above the band leaves no room for {n} evenly spread clips "
+                         f"(min spacing {CLIP_MIN_SPACING:.0%} of even); try a narrower --clip-width, "
+                         f"fewer --clips or another --seed")
+    params = list(best[2])
+    q = np.sort(np.array(params))
+    gaps = np.diff(np.concatenate([q, [q[0] + L]]))
+    stats["clip_strut_clearance_mm"] = [round(float(clear[np.argmin(np.abs(cand - c))]), 2) for c in params]
+    stats["clip_spacing_min_pct_of_even"] = round(float(gaps.min() / spacing * 100), 1)
+    stats["clip_shift_from_targets_mm"] = round(float(best[0] + abs(best[1])), 1)
     return [c / tg.arc for c in params]
 
 
