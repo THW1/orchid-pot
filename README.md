@@ -53,7 +53,7 @@ python3 orchid_pot.py box --seed 3 --out pot_s3        # another random pattern,
 python3 orchid_pot.py cylinder --graph-only --seed 3   # pattern metrics only (~2 s), no mesh
 python3 orchid_pot.py cylinder --parts pot,tray        # pot + drip tray (saucer)
 python3 orchid_pot.py box --parts tray                 # only the tray (~5 s), pot unchanged
-python3 orchid_pot.py orb --parts tray --tray clip     # clip-on tray for hanging pots
+python3 orchid_pot.py orb --clip-groove --parts pot,tray --tray clip   # pot with snap groove + clip tray
 python3 orchid_pot.py box --from-report pot_s3_report.json --parts tray --tray clip  # tray for that pot
 python3 orchid_pot.py cylinder --taper 8 --parts pot,planter --eyelets 0 --planter-eyelets 3  # hanging planter
 python3 orchid_pot.py cylinder --help                  # options for that shape
@@ -121,6 +121,9 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--eyelet-hole` | 6 | 5–8 | Eyelet hole diameter (S-hook or wire) |
 | `--eyelet-wire` | 4.5 | 4–5 | Eyelet ring width |
 | `--fillet` | 1.5 | 1–2 | Fillet radius at strut junctions |
+| `--clip-groove` | off | on for clip trays | Pot option: continuous snap groove in the bottom band for the clip tray. Band becomes 8 mm unless `--band` is given |
+| `--groove-depth` | 1.5 | 1.2–2.0 | Groove depth into the band (must leave ≥ 1.5 mm of the wall) |
+| `--groove-height` | 3.0 | 2.5–4.0 | Groove opening height at the outer face (flat floor, 45° ceiling) |
 | `--voxel` | 0.4 | 0.3–0.5 | Mesh resolution. 0.3 is finer but about 2.4× the grid memory and slower |
 | `--decimate` | 0.75 | 0.6–0.8 | Fraction of triangles removed; 0 = off. Retries once milder if the result is not watertight |
 | `--layer` | 0.2 | your layer height | Layer height used by the island and cantilever checks |
@@ -147,13 +150,29 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--planter-rib-clearance` | 1.0 | 0.5–1.5 | Clearance between ribs and pot |
 | `--planter-eyelets` | 0 | 0, 3, 4 | Eyelets on the planter rim for a hanging planter; then use `--eyelets 0` for the pot. Box: 0, 2 or 4 |
 | `--clips` | box 4, round 3 | 3–4 | Number of clips (box: side centres; round: 120° apart, each moved into a free lattice gap) |
-| `--clip-width` | 8 | 6–10 | Clip width along the band |
+| `--clip-width` | lattice 8, groove 10 | 5–10 (lattice), 8–12 (groove) | Clip width along the band |
+| `--clip-strain` | 1.5 | 1.2–1.8 | Max arm bending strain in %, sets the arm length (and with it the standoff). Lower = longer, gentler arm |
 | `--clip-thickness` | 1.6 | 1.2–2.0 | Clip arm thickness (4 lines). Thicker = stiffer, needs a longer arm |
 | `--clip-hook` | 0.6 | 0.4–1.0 | Hook reach onto the flat band top, past the band's 1.5 mm edge rounding |
 | `--clip-clearance` | 0.3 | 0.2–0.5 | Clearance between clip and pot; adjust after a test print |
 
-**Clip tray:** flexible arms rise beside the bottom band. Their hooks snap over the band top
-into lattice openings and sit on the flat band top.
+**Clip tray, two modes:**
+- **Groove (recommended, `--clip-groove` on the pot):** the pot gets a continuous snap
+  groove in its bottom band, with a flat floor as the catch face and a 45° ceiling as the
+  lead-in; both print without support.
+  - The hooks snap into the groove, so the lattice, seed and cell size no longer matter.
+  - Clips are exactly evenly spaced, and the tray can be put on in any rotation.
+  - The arm follows the band at `--clip-clearance` (also on the leaning orb band).
+  - Vertical play is only the clearance (0.3 mm by default).
+  - The fingerprint check compares only the shape incl. groove, so one tray fits every pot
+    of that shape and groove, whatever its seed.
+- **Lattice (without a groove):** the hooks reach over the band top into lattice openings
+  and sit on the flat band top.
+
+Both modes:
+- **Root fillet:** 3 mm where the arm meets the tray floor. A printed clip broke there
+  with the former 0.5 mm blend.
+- **Strain limit:** `--clip-strain` (1.5 %) sets the arm length and the standoff.
 - **Clip options:** `--clip-*` options need `--tray clip` and `tray` in `--parts`; otherwise
   the run stops with an error, because a saucer has no clips. The planter never has clips;
   it holds the pot with feet and ribs.

@@ -110,3 +110,17 @@ def test_ignored_accessory_options_are_errors():
     assert r.returncode == 2 and "need planter in --parts" in r.stderr
     r = run("cylinder", "--wall", "4", "--parts", "tray", "--tray", "clip", "--clip-hook", "3")
     assert r.returncode != 0 and "exceeds the flat band top" in r.stderr
+
+
+def test_clip_groove_pot_and_tray(tmp_path):
+    """Snap groove (--clip-groove): the pot stays printable (no islands), the clip tray
+    fits (seated: no contact; every clip catches) at <= 1.5 % arm strain, clips exactly even."""
+    out = tmp_path / "g"
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "box", "--clip-groove", "--parts", "pot,tray",
+                    "--tray", "clip", "--out", str(out)], check=True, capture_output=True)
+    pot = json.loads((tmp_path / "g_report.json").read_text())
+    assert pot["params"]["band"] == 8.0 and pot["unsupported_islands"] == 0 and pot["stl_roundtrip_watertight"]
+    t = json.loads((tmp_path / "g_tray_clip_report.json").read_text())
+    assert t["fit_check"]["ok"] and t["fit_check"]["lifted_clips_engaged"] == 4
+    assert t["tray"]["clip_mode"] == "groove" and t["tray"]["clip_strain_pct"] <= 1.5
+    assert t["clip_spacing_min_pct_of_even"] == 100.0

@@ -3,6 +3,21 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.9.0 (2026-10-18)
+- **Snap groove** (`--clip-groove`, pot option): a continuous groove in the bottom band
+  (default band 8 mm, groove 1.5 mm deep, 3 mm opening). Flat floor on a layer boundary
+  as the catch face; 45° ceiling as the lead-in. Prints without support on all shapes.
+- **Clip tray in groove mode:**
+  - clips exactly evenly spaced, independent of the lattice, default width 10 mm;
+  - the arm follows the band (also on the orb's lean);
+  - vertical play = clearance only (0.3 mm, was about 1.05 mm);
+  - fingerprint check on shape incl. groove only.
+- **Clip robustness (both modes):** 3 mm root fillet (a printed clip broke at its 0.5 mm
+  root) and `--clip-strain` (default 1.5 %, was a fixed 2 %). Lattice clip arms therefore
+  get longer, so the standoff rises.
+- Verified with fit checks: box, cylinder, taper +8/−8, orb and a 125 mm orb (wall 4,
+  4 clips); pots without support islands. New test for groove pot + tray.
+
 ## v0.8.3 (2026-10-18)
 - Clips are placed as an evenly spaced set, rotated as a whole to fit the lattice, with a
   guaranteed minimum spacing of 75 % of the even spacing. Before, each clip took its

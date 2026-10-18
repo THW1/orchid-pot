@@ -69,6 +69,10 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `accessories.py::TrayGeometry` is the only accessory code that reads pot internals;
   `accessories.py::place_clips` and `accessories.py::tray_sdf` share the hook region
   (`band_top_allowance`, `CLIP_LIP_H`).
+- `potlib.py::groove_geometry` / `potlib.py::groove_sdf` define the snap groove for both
+  the pot cut (`orchid_pot.py::build_sdf`, `orb.py::build_orb_sdf`) and the groove clips
+  (`accessories.py::clip_geometry_groove`). `clip_groove` is a pot option despite its prefix
+  (exempt in `orchid_pot.py::apply_report` and the unused-option guard).
 - `orchid_pot.py::apply_report` skips accessory options by prefix (tray*, clip*,
   planter*, standoff): new accessory options need such a prefix.
 - `potlib.py::fingerprint` is written by `orchid_pot.py::build_pot` / `orb.py::run` into

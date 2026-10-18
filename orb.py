@@ -42,8 +42,9 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import SphericalVoronoi, cKDTree
 
-from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, pt_seg_dist,
-                    require_rim_crossings, round_isect, rounded_box2, smin, wall_metrics)
+from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction,
+                    groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings, round_isect,
+                    rounded_box2, smin, wall_metrics)
 
 
 class OrbShape:
@@ -453,6 +454,14 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         ring = round_isect(np.abs(np.hypot(a1, Z - cen[2]) - Rt) - rt, np.abs(ar) - t / 2, args.edge_round)
         g.D[sl] = smin(g.D[sl], ring, k)
 
+    gg = groove_geometry(args)
+    if gg is not None:
+        # snap groove: horizontal depth from the outer face = normal depth / sin(wall angle)
+        ix, iy, izz = sel_idx.T
+        n = (t / 2 - W) / math.sin(math.radians(args.min_wall_angle))
+        near = (Zs > gg[0] - 1) & (Zs < gg[0] + gg[2] + 1)
+        g.D[ix[near], iy[near], izz[near]] = np.maximum(g.D[ix[near], iy[near], izz[near]],
+                                                        -groove_sdf(n[near], Zs[near], gg))
     grow_rim_gussets(args, sh, g, gaps, sel_idx, aw, stats)
     for iz, z in enumerate(g.ax[2]):
         g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -z)

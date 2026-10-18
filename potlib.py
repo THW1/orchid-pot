@@ -6,7 +6,8 @@
 # Decisions:   Split out of orchid_pot.py (v0.5.0, verbatim move) so orb.py can reuse the
 #              helpers without importing or touching the box/cylinder pipeline. Later
 #              additions shared by both pipelines: grade_fraction, floor_field,
-#              require_rim_crossings (v0.6.1), finish(extra_checks=...) and the STL round
+#              groove_geometry/groove_sdf (v0.9.0, the snap groove shared by pots and clip
+#              tray), require_rim_crossings (v0.6.1), finish(extra_checks=...) and the STL round
 #              trip check of every decimation candidate (v0.7.1, stl_roundtrip /
 #              export_safe).
 #              Behaviour changes here affect every shape: run tests/ (byte-identical
@@ -302,6 +303,28 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
     return out
 
 
+def groove_geometry(args):
+    """Continuous snap groove in the bottom band's outer face (--clip-groove), or None.
+    Returns (z0, depth, opening) in pot coordinates: flat groove floor at z0 (the clip's
+    catch face; it faces up, so it prints as a floor), opening height at the outer face,
+    ceiling at 45 deg (self-supporting, and the clip's lead-in). >= 2.5 mm of solid band
+    stay above the groove. The floor is snapped down to a layer boundary (multiple of
+    --layer): the catch face is then a crisp layer surface, and it never lies on a slice
+    plane of the island check (z0 = 2.5 did, and the slice fell apart into fake islands).
+    Shared by the pots (cut) and the clip tray (hooks), so both agree."""
+    if not getattr(args, "clip_groove", False):
+        return None
+    z0 = math.floor((args.band - args.groove_height - 2.5) / args.layer + 1e-9) * args.layer
+    return round(z0, 6), args.groove_depth, args.groove_height
+
+
+def groove_sdf(n, z, gg):
+    """SDF of the groove region; n = horizontal distance inward from the band's outer face
+    (negative outside), z = pot height. Negative inside the groove."""
+    z0, d, h = gg
+    return np.maximum(np.maximum(n - d, z0 - z), ((z - z0) + np.maximum(n, 0) - h) / math.sqrt(2))
+
+
 # Parameters that set the pot's outline, band and band-top height (what a tray sits on).
 SHAPE_KEYS = ("shape", "size", "corner_r", "diameter", "taper", "height", "stretch",
               "min_wall_angle", "wall", "band", "rim", "floor", "fillet")
@@ -317,6 +340,8 @@ def fingerprint(args, struts=None):
     any parameter or library change that moves a strut changes it."""
     d = vars(args)
     keys = [k for k in SHAPE_KEYS if k in d and not (k == "height" and d.get("shape") == "orb")]
+    if d.get("clip_groove"):                  # only then: older/groove-less pots keep their hash
+        keys += ["clip_groove", "groove_depth", "groove_height", "layer"]   # layer: groove floor
     out = {"shape": hashlib.sha256(json.dumps({k: d[k] for k in keys}, sort_keys=True).encode()).hexdigest()[:12]}
     if struts is not None:
         q = np.round(np.vstack([np.asarray(p, float).reshape(len(p), -1)[:, :3] for p in struts]) * 1000).astype(np.int64)

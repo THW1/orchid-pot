@@ -15,7 +15,11 @@
 #              bottom: the floor is never in standing water and air reaches it from below.
 #              Each foot has an outer stop (cleared by the band's lean), so the pot cannot
 #              slide in a tray that is wider than its band.
-#              Clip tray (hanging): flexible arms rise beside the band; their hooks reach past
+#              Clip tray with --clip-groove (pot option): hooks snap into a continuous groove in
+#              the band (potlib.groove_geometry): exactly even clips, lattice irrelevant, arm
+#              follows the band, vertical play = clearance. Root fillet 3 mm and --clip-strain
+#              1.5 % in both modes: a printed clip broke at its root (0.5 mm blend, 2 %).
+#              Clip tray (lattice, no groove): flexible arms rise beside the band; their hooks reach past
 #              the band's edge rounding onto its flat top, inside lattice gaps found from the
 #              pot's strut paths (passed in by orchid_pot.main). The catch face sits above the
 #              band's real top (smooth-union bulge + clearance), so a seated pot only touches
@@ -47,7 +51,7 @@ import time
 import numpy as np
 import trimesh
 
-from potlib import Grid, fingerprint, finish, round_isect, smin
+from potlib import Grid, fingerprint, finish, groove_geometry, round_isect, smin
 
 
 def band_top_allowance(args):
@@ -66,7 +70,9 @@ CLIP_MIN_SPACING = 0.75        # neighbouring clips at least 75 % of the even sp
 # 1.5 * band_w / wall (orb at 55 deg: 1.83 mm). A hook that only reaches the rounding acts as
 # a detent (the load cams it outward), so --clip-hook is measured onto the flat band top.
 BAND_EDGE_ROUND = 1.5
-CLIP_STRAIN_MAX = 0.02         # PETG cantilever snap-fit guideline 1.5-2 %
+# Arm root: a 3 mm smooth union with the tray floor. A clip broke at its root with the
+# former 0.5 mm blend: the bending stress peaks there, across the layer lines.
+CLIP_ROOT_FILLET = 3.0
 
 
 # CTX: Read-only adapter from the three pot shapes to what accessories need; the only place
@@ -224,6 +230,22 @@ def feet_fields(tg, X2, Y2, params):
     return out
 
 
+def clip_geometry_groove(args, tg, gg):
+    """Clip into the pot's snap groove (--clip-groove). Radii relative to the band centre
+    line at z = 0; the band's outer face is r_face0 + lean * z (pot z), and the arm follows
+    it at --clip-clearance (closer to the pot than a vertical arm on a leaning band). The
+    hook reaches to clearance before the groove's inner wall; its flat underside sits on the
+    groove floor (catch), its 45 deg top matches the groove ceiling (lead-in).
+    defl: snap deflection = widest band face below the groove floor - hook tip."""
+    z0, d, h = gg
+    cc = args.clip_clearance
+    r_face0, lean = tg.band_w / 2, tg.lean_signed
+    face = lambda zp: r_face0 + lean * zp
+    r_tip = face(z0) - (d - cc)
+    return {"face": face, "z0": z0, "d": d, "h": h, "defl": max(face(0.0), face(z0)) - r_tip,
+            "reach": d - cc}
+
+
 def clip_geometry(args, tg):
     """Radial clip geometry relative to the band centre line at z = 0:
     r_top  band outer face at the band top (signed lean: narrower for taper < 0),
@@ -240,21 +262,31 @@ def clip_geometry(args, tg):
 
 
 def clip_standoff(args, tg):
-    """Standoff giving a clip arm long enough for CLIP_STRAIN_MAX at the snap deflection:
-    strain = 1.5 t y / L^2 and L = standoff + band + band_top_allowance + clearance."""
-    y = clip_geometry(args, tg)["defl"]
-    L = math.sqrt(1.5 * args.clip_thickness * y / CLIP_STRAIN_MAX)
-    return max(6.0, round(L - args.band - band_top_allowance(args) - args.clip_clearance + 0.05, 1))
+    """Standoff giving a clip arm long enough for --clip-strain at the snap deflection:
+    strain = 1.5 t y / L^2; L = standoff + (catch height above the pot bottom)."""
+    gg = groove_geometry(args)
+    if gg is not None:
+        y, catch = clip_geometry_groove(args, tg, gg)["defl"], gg[0] + args.clip_clearance
+        lo = 4.0
+    else:
+        y, catch = clip_geometry(args, tg)["defl"], args.band + band_top_allowance(args) + args.clip_clearance
+        lo = 6.0
+    L = math.sqrt(1.5 * args.clip_thickness * y / (args.clip_strain / 100))
+    return max(lo, round(L - catch + 0.05, 1))
 
 
 def tray_sdf(args, tg, stats, clip_params=()):
     gap, wall, ft, so = args.tray_gap, args.tray_wall, args.tray_floor, args.standoff
     h_tray = ft + so + args.tray_rise
     ct, cc, cw = args.clip_thickness, args.clip_clearance, args.clip_width
-    cg = clip_geometry(args, tg)
+    gg = groove_geometry(args)
+    cg = clip_geometry_groove(args, tg, gg) if gg is not None else clip_geometry(args, tg)
+    if gg is not None:
+        cg["r_arm"] = max(cg["face"](0.0), cg["face"](gg[0] + gg[2])) + cc
     cpts, cnrm = tg.band_at(clip_params) if len(clip_params) else (np.zeros((0, 2)), np.zeros((0, 2)))
-    # the arm must be able to flex outward by the snap deflection without touching the tray wall
-    need = cg["r_arm"] + ct + cg["defl"] + 0.5
+    # the arm must be able to flex outward by the snap deflection without touching the tray
+    # wall; the extra 1.5 mm keeps the root fillet's smooth union from webbing to the wall
+    need = cg["r_arm"] + ct + cg["defl"] + 1.5
     rs = np.arange(0, 60, 0.05)
     for p, n in zip(cpts, cnrm):
         o_ = tg.outline(p[0] + rs * n[0], p[1] + rs * n[1])
@@ -265,7 +297,8 @@ def tray_sdf(args, tg, stats, clip_params=()):
     # The band top is not flat at nominal --band: the pot's band/floor smooth union (k = 2.0
     # in orchid_pot.build_sdf / orb.build_orb_sdf) lifts it by up to k/4 = 0.5 mm, and strut
     # fillets add more. Measured under the hooks at defaults: 5.46-5.72 mm for a 5 mm band.
-    z_catch = ft + so + args.band + band_top_allowance(args) + cc
+    zb = ft + so                                              # pot bottom
+    z_catch = zb + (gg[0] + cc if gg is not None else args.band + band_top_allowance(args) + cc)
     lip_h = CLIP_LIP_H
     g = Grid([-E + o, -E + o, -1.0 + o], [E, E, max(h_tray, z_catch + lip_h) + 1.0], args.voxel)
     X2, Y2 = np.meshgrid(g.ax[0], g.ax[1], indexing="ij")
@@ -285,7 +318,7 @@ def tray_sdf(args, tg, stats, clip_params=()):
     # hook's top is chamfered 45 deg (lead-in when the pot is pushed down); its underside is
     # the catch face, a 1.3 mm overhang that prints without support.
     clips = []
-    r_ai, r_tip = cg["r_arm"], cg["r_tip"]
+    r_ai, r_tip = cg["r_arm"], cg.get("r_tip", 0.0)
     for p, n in zip(cpts, cnrm):
         r_, s_ = local(p, n)
         clips.append((np.maximum(np.abs(r_ - (r_ai + ct / 2)) - ct / 2, np.abs(s_) - cw / 2), r_, np.abs(s_) - cw / 2))
@@ -299,11 +332,21 @@ def tray_sdf(args, tg, stats, clip_params=()):
             s = round_isect(stop2, np.maximum(z - (ft + so + stop_h), -z), 0.5)
             D = smin(D, np.minimum(f, s), 0.8)
         for arm2, r_, sw in clips:
-            arm = round_isect(arm2, np.maximum(z - (z_catch + lip_h), (ft - 0.5) - z), 0.4)
-            lip = np.maximum.reduce([r_tip - r_, r_ - (r_ai + ct), sw, np.full_like(r_, z_catch - z),
-                                     np.full_like(r_, z - (z_catch + lip_h)),
-                                     ((z - z_catch) - 0.3 - (r_ - r_tip)) / math.sqrt(2)])
-            D = smin(D, np.minimum(arm, lip), 0.5)
+            if gg is not None:                                 # groove clip, arm follows the band
+                f_ = cg["face"](z - zb)
+                top = zb + gg[0] + gg[2] - cc                      # hook top at the outer face
+                arm2 = np.maximum(np.abs(r_ - (f_ + cc + ct / 2)) - ct / 2, sw)
+                arm = round_isect(arm2, np.maximum(z - top, (ft - 0.5) - z), 0.4)
+                hd = np.maximum(f_ - r_, 0)                        # depth into the groove
+                lip = np.maximum.reduce([(f_ - (gg[1] - cc)) - r_, r_ - (f_ + cc + ct), sw,
+                                         np.full_like(r_, z_catch - z),
+                                         (z - top + hd) / math.sqrt(2)])
+            else:
+                arm = round_isect(arm2, np.maximum(z - (z_catch + lip_h), (ft - 0.5) - z), 0.4)
+                lip = np.maximum.reduce([r_tip - r_, r_ - (r_ai + ct), sw, np.full_like(r_, z_catch - z),
+                                         np.full_like(r_, z - (z_catch + lip_h)),
+                                         ((z - z_catch) - 0.3 - (r_ - r_tip)) / math.sqrt(2)])
+            D = smin(D, np.minimum(arm, lip), CLIP_ROOT_FILLET)
         g.D[:, :, iz] = np.maximum(D, -z)
 
     # water capacity: cavity above the floor up to 1 mm below the pot bottom, minus feet/clips
@@ -318,11 +361,15 @@ def tray_sdf(args, tg, stats, clip_params=()):
         L = z_catch - ft                                      # free arm length (floor top -> catch)
         stats["tray"].update({"clips": len(clip_params), "clip_catch_z_mm": round(z_catch, 2),
                               "clip_arm_length_mm": round(L, 1),
-                              "clip_hook_reach_mm": round(cg["reach"], 2), "clip_hook_on_flat_mm": args.clip_hook,
+                              "clip_mode": "groove" if gg is not None else "lattice",
+                              "clip_hook_reach_mm": round(cg["reach"], 2),
                               "clip_snap_deflection_mm": round(cg["defl"], 2),
-                              "clip_vertical_play_mm": round(band_top_allowance(args) + cc, 2),
-                              # cantilever snap-fit root strain 1.5 t y / L^2 (PETG guideline <= 2 %)
+                              "clip_vertical_play_mm": round(cc if gg is not None else band_top_allowance(args) + cc, 2),
+                              "clip_width_mm": cw, "clip_root_fillet_mm": CLIP_ROOT_FILLET,
+                              # cantilever snap-fit root strain 1.5 t y / L^2 (PETG FDM: <= 1.5 %)
                               "clip_strain_pct": round(150 * ct * cg["defl"] / L ** 2, 2)})
+        if gg is None:
+            stats["tray"]["clip_hook_on_flat_mm"] = args.clip_hook
     return g
 
 
@@ -484,7 +531,8 @@ def fit_checker(args, kind, fp, zb, clip_xy=()):
             ok = ok and max(ins) <= 0.05
         elif kind == "clip":
             cxy = np.asarray(clip_xy)
-            lift = band_top_allowance(args) + args.clip_clearance + 0.75
+            play = args.clip_clearance + (0.0 if groove_geometry(args) else band_top_allowance(args))
+            lift = play + 0.75
             hit = {int(np.argmin(np.linalg.norm(cxy - q.centroid[:2], axis=1))) for q in overlap(lift)[1]}
             res.update({"lift_mm": round(lift, 2), "lifted_clips_engaged": len(hit), "clips": len(cxy)})
             ok = ok and len(hit) == len(cxy)
@@ -520,7 +568,9 @@ def run(args, parts, geom, struts=None):
     t0 = time.time()
     errors = []
     tg = TrayGeometry(args, geom)
-    if "tray" in parts and args.tray == "clip":
+    if args.tray == "clip" and args.clip_width is None:
+        args.clip_width = 10.0 if groove_geometry(args) else 8.0
+    if "tray" in parts and args.tray == "clip" and groove_geometry(args) is None:
         # the hook must end on the band's flat top: band width minus the edge rounding on both
         # sides (horizontal); a longer hook passes the inner edge and the snap deflection explodes
         flat = tg.band_w - 2 * BAND_EDGE_ROUND * tg.band_w / args.wall
@@ -534,9 +584,18 @@ def run(args, parts, geom, struts=None):
         a.height, a.eyelets = 1e6, 0
         if a.standoff is None:
             a.standoff = 6.0 if a.tray == "saucer" else clip_standoff(a, tg)
-        fp = fingerprint(args, struts if args.tray == "clip" else None)
+        # groove clips do not depend on the lattice: the shape fingerprint (incl. groove) suffices
+        lattice_clips = args.tray == "clip" and groove_geometry(args) is None
+        fp = fingerprint(args, struts if lattice_clips else None)
         stats = {"params": vars(a), "part": "tray", "fingerprint": fp}
-        cp = place_clips(tg, args, struts, stats) if args.tray == "clip" else ()
+        if args.tray != "clip":
+            cp = ()
+        elif groove_geometry(args) is not None:            # the groove runs all around:
+            n = args.clips if args.clips is not None else (4 if tg.shape == "box" else 3)
+            cp = tg.clip_targets(n)                           # exactly even, lattice irrelevant
+            stats["clip_spacing_min_pct_of_even"] = 100.0
+        else:
+            cp = place_clips(tg, args, struts, stats)
         g = tray_sdf(a, tg, stats, cp)
         print(f"tray sdf {time.time() - t0:.1f}s grid {g.n.tolist()}")
         pts, nrm = tg.band_at(cp) if len(cp) else (np.zeros((0, 2)), np.zeros((0, 2)))

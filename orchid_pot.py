@@ -75,8 +75,8 @@ from scipy import ndimage
 from scipy.spatial import Voronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
-                    pt_seg_dist, require_rim_crossings, round_isect, rounded_box2,
-                    seg_seg_dist, smin, wall_metrics)
+                    groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
+                    round_isect, rounded_box2, seg_seg_dist, smin, wall_metrics)
 
 
 # CTX: CLI contract: one subcommand ("noun") per shape; options shared by all shapes live in
@@ -104,6 +104,11 @@ def parse_args(argv=None):
     g.add_argument("--eyelet-hole", type=float, default=6.0, help="eyelet hole diameter [mm]")
     g.add_argument("--eyelet-wire", type=float, default=4.5, help="eyelet ring width [mm]")
     g.add_argument("--fillet", type=float, default=1.5, help="smooth-union radius at nodes [mm]")
+    g = common.add_argument_group("snap groove for the clip tray (pot option)")
+    g.add_argument("--clip-groove", action="store_true",
+                   help="continuous snap groove in the bottom band for clip trays (band 8 mm unless --band)")
+    g.add_argument("--groove-depth", type=float, default=1.5, help="groove depth into the band [mm]")
+    g.add_argument("--groove-height", type=float, default=3.0, help="groove opening height at the outer face [mm]")
     g = common.add_argument_group("printability (advanced)")
     g.add_argument("--min-angle", type=float, default=35.0, help="min strut elevation [deg]")
     g.add_argument("--max-bridge", type=float, default=10.0, help="max horizontal span of flat bridges [mm]")
@@ -136,7 +141,10 @@ def parse_args(argv=None):
     g.add_argument("--planter-eyelets", type=int, default=0,
                    help="eyelets on the planter rim for hanging (0 = standing; box: 2 or 4)")
     g.add_argument("--clips", type=int, default=None, help="clip count (default: box 4, round 3)")
-    g.add_argument("--clip-width", type=float, default=8.0, help="clip width along the band [mm]")
+    g.add_argument("--clip-width", type=float, default=None,
+                   help="clip width along the band [mm] (default: 8 lattice clips, 10 with a groove)")
+    g.add_argument("--clip-strain", type=float, default=1.5,
+                   help="max arm bending strain [%%] that sets the arm length (PETG FDM: 1.5)")
     g.add_argument("--clip-thickness", type=float, default=1.6, help="clip arm thickness [mm]")
     g.add_argument("--clip-hook", type=float, default=0.6,
                    help="hook reach onto the flat band top, past the band's edge rounding [mm]")
@@ -179,6 +187,16 @@ def parse_args(argv=None):
     check_unused_options(p, args, sys.argv[1:] if argv is None else argv)
     if args.from_report:
         apply_report(p, args)
+    if args.clip_groove:
+        given = {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}
+        if "--band" not in given and not args.from_report:
+            args.band = 8.0                    # room for the groove + 2.5 mm solid above it
+        z0 = math.floor((args.band - args.groove_height - 2.5) / args.layer + 1e-9) * args.layer
+        if z0 < 1.5:
+            p.error(f"--clip-groove: --band {args.band} too low for the groove; "
+                    f"need >= {args.groove_height + 4.0}")
+        if args.groove_depth > args.wall - 1.5:
+            p.error(f"--groove-depth must leave >= 1.5 mm of the {args.wall} mm band")
     if args.eyelets is None:
         args.eyelets = args.eyelets_default
     del args.eyelets_default
@@ -222,7 +240,7 @@ def check_unused_options(p, args, argv):
     saucer without clips)."""
     given = {t.split("=")[0] for t in argv if t.startswith("--")}
     parts = {s.strip() for s in args.parts.split(",")}
-    clip = sorted(o for o in given if o.startswith("--clip"))
+    clip = sorted(o for o in given if o.startswith("--clip") and o != "--clip-groove")
     if clip and not ("tray" in parts and args.tray == "clip"):
         p.error(f"{', '.join(clip)} only apply to the clip tray: add --tray clip and tray to --parts "
                 f"(the default tray is a saucer without clips; the planter has feet and ribs, no clips)")
@@ -231,6 +249,9 @@ def check_unused_options(p, args, argv):
         p.error(f"{', '.join(tray)} need tray in --parts")
     if "--standoff" in given and not parts & {"tray", "planter"}:
         p.error("--standoff needs tray or planter in --parts")
+    groove = sorted(o for o in given if o.startswith("--groove-"))
+    if groove and not args.clip_groove:
+        p.error(f"{', '.join(groove)} need --clip-groove")
     planter = sorted(o for o in given if o.startswith("--planter"))
     if planter and "planter" not in parts:
         p.error(f"{', '.join(planter)} need planter in --parts")
@@ -257,7 +278,8 @@ def apply_report(p, args):
         p.error(f"--from-report: {args.from_report} is a {rep['part']} report; pass the pot's report")
     if rp.get("shape") != args.shape:
         p.error(f"--from-report: report is for shape '{rp.get('shape')}', not '{args.shape}'")
-    acc = lambda k: k.startswith(("tray", "clip", "planter")) or k == "standoff"
+    # clip_groove is a pot option despite its prefix: it must come from the pot's report
+    acc = lambda k: (k.startswith(("tray", "clip", "planter")) or k == "standoff") and k != "clip_groove"
     for k, v in rp.items():
         if hasattr(args, k) and k not in RUN_KEYS and not acc(k):
             setattr(args, k, v)
@@ -785,15 +807,20 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     fl = floor_field(g, fsegs, dfoot, args)
 
     zc_b = args.band / 2 - 1
+    gg = groove_geometry(args)
     for iz, z in enumerate(g.ax[2]):
         dpat = np.interp(uxy, U, F[iz], period=fr.P)
-        _, pw = fr.wall_fields(X2, Y2, z)
+        dout_z, pw = fr.wall_fields(X2, Y2, z)
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
         band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
         flo = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
         solid = smin(smin(band, rim, 2.0), flo, 2.0)
         g.D[:, :, iz] = np.maximum(smin(wall, solid, k), -z)
+        if gg is not None and gg[0] - 1 < z < gg[0] + gg[2] + 1:
+            # snap groove: n = horizontal depth from the outer face (cone: normal / cos(taper))
+            n = -dout_z / getattr(fr, "cos_t", 1.0)
+            g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -groove_sdf(n, z, gg))
     return g
 
 
@@ -809,7 +836,7 @@ def main():
         else:
             geom = make_frame(args)
         struts = polys if args.tray == "clip" else None
-        if args.tray == "clip" and struts is None:   # clips go into lattice gaps above the band
+        if args.tray == "clip" and struts is None and not args.clip_groove:   # lattice clips only
             rng = np.random.default_rng(args.seed)
             if args.shape == "orb":
                 struts = orb.orb_graph(args, geom, rng, {})
