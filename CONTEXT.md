@@ -69,6 +69,10 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `accessories.py::TrayGeometry` is the only accessory code that reads pot internals;
   `accessories.py::place_clips` and `accessories.py::tray_sdf` share the hook region
   (`band_top_allowance`, `CLIP_LIP_H`).
+- `--wall-style solid` switches off the lattice in `orchid_pot.py::build_pot` /
+  `orb.py::run` and makes wall and floor solid in `orchid_pot.py::build_sdf` /
+  `orb.py::build_orb_sdf` (hard union with band/rim; drain holes from
+  `potlib.py::drain_holes_sdf`).
 - `potlib.py::groove_geometry` / `potlib.py::groove_sdf` define the snap groove for both
   the pot cut (`orchid_pot.py::build_sdf`, `orb.py::build_orb_sdf`) and the groove clips
   (`accessories.py::clip_geometry_groove`). `clip_groove` is a pot option despite its prefix

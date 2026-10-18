@@ -3,6 +3,16 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.10.0 (2026-10-18)
+- `--wall-style solid`: plain closed pots for ordinary plants (box, cylinder, orb).
+  - Solid wall and floor, default 2.4 mm (3.2 mm with `--clip-groove`).
+  - Drainage holes `--drain-holes` (default 5) / `--drain-dia` (8 mm).
+  - No strut graph.
+  - Wall and band/rim are joined with a hard union: a smooth union of the coinciding
+    surfaces had produced a 0.4 mm ridge at band and rim, which a groove clip touched.
+  - Rim, eyelets, snap groove, saucer, groove clip tray and planter work unchanged.
+- Voronoi pots unchanged (goldens byte-identical); new test for a solid box + saucer.
+
 ## v0.9.0 (2026-10-18)
 - **Snap groove** (`--clip-groove`, pot option): a continuous groove in the bottom band
   (default band 8 mm, groove 1.5 mm deep, 3 mm opening). Flat floor on a layer boundary

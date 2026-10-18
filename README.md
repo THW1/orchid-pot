@@ -102,7 +102,10 @@ Below about 50°, few strut directions can still be printed near the floor and o
 |---|---|---|---|
 | `--height` | 100 | – | Body height; the eyelets add about 11 mm (box, cylinder) |
 | `--eyelets` | box 4, cylinder/orb 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 0, 2 or 4 (corners) |
-| `--wall` | 5 | 4–6 | Wall thickness |
+| `--wall-style` | `voronoi` | `voronoi`, `solid` | Voronoi lattice (orchids) or closed solid wall and floor (ordinary plants) |
+| `--wall` | voronoi 5, solid 2.4 (3.2 with `--clip-groove`) | 4–6 (voronoi), 1.8–3.2 (solid) | Wall thickness |
+| `--drain-holes` | 5 (solid only) | 0–9 | Solid pots: drainage holes in the floor (centre + ring); 0 = closed bowl |
+| `--drain-dia` | 8 | 5–12 | Solid pots: drainage hole diameter |
 | `--strut` | 4.5 | 4–5 | Wall strut width (about 10 lines at 0.42 mm) |
 | `--edge-round` | 1.0 | 0.5–1.5 | Rounding of the strut face edges |
 | `--cell` | 17 | 14–20 | Wall cell size (seed spacing). Smaller means smaller openings, more weight |
@@ -115,7 +118,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--merge` | 3 | 2–4 | Voronoi nodes closer than this are merged (avoids blobs) |
 | `--band` | 5 | 4–6 | Bottom band height |
 | `--rim` | 6 | 5–8 | Top rim height |
-| `--floor` | 5 | 4–6 | Floor thickness |
+| `--floor` | voronoi 5, solid 2.4 | 4–6 (voronoi), 1.6–3 (solid) | Floor thickness (lattice or solid plate) |
 | `--floor-cell` | 16 | 12–18 | Floor cell size. Use the smaller end for a bark medium |
 | `--floor-strut` | 4.5 | 4–5 | Floor strut width |
 | `--eyelet-hole` | 6 | 5–8 | Eyelet hole diameter (S-hook or wire) |
@@ -237,6 +240,22 @@ from the belly. The report gives `tray.pot_bottom_z_mm` and `tray.water_capacity
 
 Higher values give a taller, more "upward" pattern that needs fewer printability fixes.
 Lower values give rounder cells but more flat bridges.
+
+## Solid pots (`--wall-style solid`)
+
+A plain closed pot for ordinary plants, for all three shapes:
+- **Wall and floor:** solid, 2.4 mm by default; with `--clip-groove` the wall is 3.2 mm so
+  the 1.5 mm groove leaves enough wall.
+- **Drainage:** 5 holes × Ø 8 mm (centre + ring) by default.
+- **Reused:** rim, eyelets, snap groove, tray, clip tray (groove mode only, since a solid
+  wall has no lattice gaps) and planter work as for Voronoi pots.
+- **Speed:** no strut graph, so a build takes about 30 s.
+- **Weights with defaults:** box about 234 g, cylinder `--taper 8` about 162 g, orb about
+  188 g. All prints need no support.
+
+```bash
+python3 orchid_pot.py cylinder --taper 8 --wall-style solid --eyelets 0 --parts pot,tray
+```
 
 ## How printability is ensured
 

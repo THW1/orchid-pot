@@ -124,3 +124,15 @@ def test_clip_groove_pot_and_tray(tmp_path):
     assert t["fit_check"]["ok"] and t["fit_check"]["lifted_clips_engaged"] == 4
     assert t["tray"]["clip_mode"] == "groove" and t["tray"]["clip_strain_pct"] <= 1.5
     assert t["clip_spacing_min_pct_of_even"] == 100.0
+
+
+def test_solid_wall_pot_with_saucer(tmp_path):
+    """--wall-style solid: closed wall, solid floor with drain holes; prints without
+    support; the saucer fits."""
+    out = tmp_path / "s"
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "box", "--wall-style", "solid",
+                    "--parts", "pot,tray", "--out", str(out)], check=True, capture_output=True)
+    pot = json.loads((tmp_path / "s_report.json").read_text())
+    assert pot["params"]["wall"] == 2.4 and pot["params"]["drain_holes"] == 5
+    assert pot["stl_roundtrip_watertight"] and pot["bodies"] == 1 and pot["unsupported_islands"] == 0
+    assert json.loads((tmp_path / "s_tray_report.json").read_text())["fit_check"]["ok"]

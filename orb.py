@@ -43,7 +43,7 @@ from scipy import ndimage
 from scipy.spatial import SphericalVoronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction,
-                    groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings, round_isect,
+                    drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings, round_isect,
                     rounded_box2, smin, wall_metrics)
 
 
@@ -390,7 +390,8 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     X2, Y2 = np.meshgrid(g.ax[0], g.ax[1], indexing="ij")
     rho2, th2 = np.hypot(X2, Y2), np.arctan2(Y2, X2)
 
-    fl = floor_field(g, fsegs, sh.footprint_sdf(X2, Y2), args)
+    solid = args.wall_style == "solid"
+    fl = sh.footprint_sdf(X2, Y2) + 1.0 if solid else floor_field(g, fsegs, sh.footprint_sdf(X2, Y2), args)
 
     # shell voxels: project onto the mid-surface meridian ellipse (Newton on phi)
     a, c, zc = sh.a, sh.c, sh.zc
@@ -432,6 +433,8 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         d = np.min([pt_seg_dist(Ep[cand], s0, s1) for s0, s1 in zip(p[:-1], p[1:])], 0)
         Dst[cand] = smin(Dst[cand], d - args.strut / 2, k)
     aw = np.abs(W)
+    if solid:                                  # closed shell up to the rim top
+        Dst = np.maximum(np.full_like(Dst, -10.0), Zs - (H - args.rim / 2))   # rim rounds the top
     wall = round_isect(Dst, aw - t / 2, args.edge_round)
     band = rounded_box2(aw, np.abs(Zs - (args.band / 2 - 1)), t / 2, args.band / 2 + 1, 1.5)
     rim = rounded_box2(aw, np.abs(Zs - (H - args.rim / 2)), t / 2, args.rim / 2, 2.0)
@@ -440,7 +443,9 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         g.D[:, :, iz] = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
     ix, iy, izz = sel_idx.T
     flo = g.D[ix, iy, izz]
-    g.D[ix, iy, izz] = smin(wall, smin(smin(band, rim, 2.0), flo, 2.0), k)
+    # solid shell and band/rim coincide: hard union (a smooth one would add a 0.4 mm ridge)
+    g.D[ix, iy, izz] = (np.minimum(wall, smin(smin(band, rim, 2.0), flo, 2.0)) if solid
+                        else smin(wall, smin(smin(band, rim, 2.0), flo, 2.0), k))
 
     # eyelets: flat vertical rings on the rim, in the rim's tangent plane
     rtop = a * math.sin(float(sh.phi_of_z(H)))
@@ -454,6 +459,10 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         ring = round_isect(np.abs(np.hypot(a1, Z - cen[2]) - Rt) - rt, np.abs(ar) - t / 2, args.edge_round)
         g.D[sl] = smin(g.D[sl], ring, k)
 
+    if solid and args.drain_holes:
+        holes = drain_holes_sdf(X2, Y2, args, sh.r_floor - t / 2)
+        for iz in np.where(g.ax[2] < args.floor + 1.0)[0]:
+            g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -holes)
     gg = groove_geometry(args)
     if gg is not None:
         # snap groove: horizontal depth from the outer face = normal depth / sin(wall angle)
@@ -547,11 +556,15 @@ def run(args):
     rng = np.random.default_rng(args.seed)
     stats = {"params": vars(args), "shape": {"type": "orb (experimental)", **sh.describe()}}
     t0 = time.time()
-    polys = orb_graph(args, sh, rng, stats)
-    stats["fingerprint"] = fingerprint(args, polys)      # accessories match against this
-    orb_metrics(args, sh, polys, stats)
-    gaps = rim_gaps(args, sh, polys, stats)
-    fsegs = floor_segments(args, sh, rng)
+    if args.wall_style == "solid":             # no lattice: no graph, gussets
+        polys, gaps, fsegs = [], [], []
+        stats["fingerprint"] = fingerprint(args)
+    else:
+        polys = orb_graph(args, sh, rng, stats)
+        stats["fingerprint"] = fingerprint(args, polys)  # accessories match against this
+        orb_metrics(args, sh, polys, stats)
+        gaps = rim_gaps(args, sh, polys, stats)
+        fsegs = floor_segments(args, sh, rng)
     print(f"graph {time.time() - t0:.1f}s: {len(polys)} wall struts, {len(fsegs)} floor struts")
     if args.graph_only:
         print(json.dumps({k: v for k, v in stats.items() if k != "params"}, indent=1))

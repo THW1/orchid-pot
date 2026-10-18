@@ -3,7 +3,8 @@
 # === CONTEXT ===
 # Purpose:     Generate a printable STL of an orchid basket/pot (Vanda style) with planar
 #              Voronoi walls and floor, solid bottom band, top rim and optional flat hanging
-#              eyelets. Shapes are subcommands: box (rounded square), cylinder (optionally
+#              eyelets (--wall-style solid: plain closed walls/floor with drain holes, for
+#              ordinary plants). Shapes are subcommands: box (rounded square), cylinder (optionally
 #              tapered) and the experimental orb (implemented in orb.py, imported only for
 #              `orb`). Target: PETG, 0.4 mm nozzle, printed upright without supports.
 # Decisions:   Walls are a planar (2D) Voronoi on the unrolled wall (u = arc length
@@ -75,7 +76,7 @@ from scipy import ndimage
 from scipy.spatial import Voronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
-                    groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
+                    drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
                     round_isect, rounded_box2, seg_seg_dist, smin, wall_metrics)
 
 
@@ -86,7 +87,13 @@ from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grad
 def parse_args(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     g = common.add_argument_group("common")
-    g.add_argument("--wall", type=float, default=5.0, help="wall thickness [mm]")
+    g.add_argument("--wall-style", choices=["voronoi", "solid"], default="voronoi",
+                   help="voronoi lattice (orchids) or solid closed walls (ordinary plants)")
+    g.add_argument("--wall", type=float, default=None,
+                   help="wall thickness [mm] (default: voronoi 5; solid 2.4, with --clip-groove 3.2)")
+    g.add_argument("--drain-holes", type=int, default=None,
+                   help="solid pots: drainage holes in the floor (default 5; 0 = closed bowl)")
+    g.add_argument("--drain-dia", type=float, default=8.0, help="solid pots: drainage hole diameter [mm]")
     g.add_argument("--strut", type=float, default=4.5, help="wall strut width in the wall plane [mm]")
     g.add_argument("--cell", type=float, default=17.0, help="seed spacing of the wall Voronoi [mm]")
     g.add_argument("--eyelets", type=int, default=None,
@@ -98,7 +105,8 @@ def parse_args(argv=None):
     g.add_argument("--edge-round", type=float, default=1.0, help="rounding of strut face edges [mm]")
     g.add_argument("--band", type=float, default=5.0, help="bottom band height [mm]")
     g.add_argument("--rim", type=float, default=6.0, help="top rim height [mm]")
-    g.add_argument("--floor", type=float, default=5.0, help="floor lattice thickness [mm]")
+    g.add_argument("--floor", type=float, default=None,
+                   help="floor thickness [mm] (default: voronoi lattice 5, solid plate 2.4)")
     g.add_argument("--floor-cell", type=float, default=16.0, help="floor Voronoi seed spacing [mm]")
     g.add_argument("--floor-strut", type=float, default=4.5, help="floor strut width [mm]")
     g.add_argument("--eyelet-hole", type=float, default=6.0, help="eyelet hole diameter [mm]")
@@ -187,6 +195,22 @@ def parse_args(argv=None):
     check_unused_options(p, args, sys.argv[1:] if argv is None else argv)
     if args.from_report:
         apply_report(p, args)
+    solid = args.wall_style == "solid"
+    if args.wall is None:
+        args.wall = (3.2 if args.clip_groove else 2.4) if solid else 5.0
+    if args.floor is None:
+        args.floor = 2.4 if solid else 5.0
+    drain = sorted(o for o in {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}
+                   if o.startswith("--drain-"))
+    if drain and not solid:
+        p.error(f"{', '.join(drain)} only apply to --wall-style solid (the lattice floor is open)")
+    if solid:
+        if args.drain_holes is None:
+            args.drain_holes = 5
+        if args.drain_holes < 0:
+            p.error("--drain-holes must be >= 0")
+        if args.tray == "clip" and "tray" in args.parts and not args.clip_groove:
+            p.error("--wall-style solid: a clip tray needs --clip-groove (no lattice gaps to hook into)")
     if args.clip_groove:
         given = {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}
         if "--band" not in given and not args.from_report:
@@ -804,19 +828,29 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     X2 = g.ax[0][:, None]; Y2 = g.ax[1][None, :]
     dfoot = fr.footprint_sdf(X2, Y2)
     uxy = fr.unmap_u(*np.broadcast_arrays(X2, Y2))
-    fl = floor_field(g, fsegs, dfoot, args)
+    solid_wall = args.wall_style == "solid"
+    fl = dfoot + 1.0 if solid_wall else floor_field(g, fsegs, dfoot, args)
+    if solid_wall and args.drain_holes:
+        r_in = (half - args.wall) if args.shape == "box" else float(fr.r_mid(0.0)) - args.wall / 2
+        holes = drain_holes_sdf(X2, Y2, args, r_in)
 
     zc_b = args.band / 2 - 1
     gg = groove_geometry(args)
     for iz, z in enumerate(g.ax[2]):
         dpat = np.interp(uxy, U, F[iz], period=fr.P)
+        if solid_wall and z <= H - args.rim / 2:   # solid wall into the rim (it rounds the
+            dpat = np.full_like(dpat, -10.0)         # top edge); eyelets stay from F
         dout_z, pw = fr.wall_fields(X2, Y2, z)
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
         band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
         flo = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
         solid = smin(smin(band, rim, 2.0), flo, 2.0)
-        g.D[:, :, iz] = np.maximum(smin(wall, solid, k), -z)
+        # solid wall and band/rim coincide: a smooth union of identical surfaces would push
+        # the face out by k/4 (0.4 mm ridge at band and rim; a groove clip touched it)
+        g.D[:, :, iz] = np.maximum(np.minimum(wall, solid) if solid_wall else smin(wall, solid, k), -z)
+        if solid_wall and args.drain_holes and z < args.floor + 1.0:
+            g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -holes)
         if gg is not None and gg[0] - 1 < z < gg[0] + gg[2] + 1:
             # snap groove: n = horizontal depth from the outer face (cone: normal / cos(taper))
             n = -dout_z / getattr(fr, "cos_t", 1.0)
@@ -853,9 +887,13 @@ def build_pot(args):
     fr = make_frame(args)
     stats = {"params": vars(args), "shape": {"type": args.shape, **fr.describe()}}
     t0 = time.time()
-    polys, gussets = wall_graph(args, fr, rng, stats)
-    stats["fingerprint"] = fingerprint(args, polys)      # accessories match against this
-    fsegs = floor_segments(args, fr, rng)
+    if args.wall_style == "solid":             # no lattice: no graph, arches, gussets
+        polys, gussets, fsegs = [], [], []
+        stats["fingerprint"] = fingerprint(args)
+    else:
+        polys, gussets = wall_graph(args, fr, rng, stats)
+        stats["fingerprint"] = fingerprint(args, polys)  # accessories match against this
+        fsegs = floor_segments(args, fr, rng)
     print(f"graph {time.time() - t0:.1f}s: {len(polys)} wall struts, {len(fsegs)} floor struts")
     if args.graph_only:
         print(json.dumps({k: v for k, v in stats.items() if k != "params"}, indent=1))

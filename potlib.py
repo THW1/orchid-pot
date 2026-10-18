@@ -303,6 +303,19 @@ def cantilevers(mesh, args, zs, secs, ew=0.42, thresh=30.0, limit=3.0):
     return out
 
 
+def drain_holes_sdf(X, Y, args, r_inner):
+    """2D SDF of the drainage holes of a solid floor (negative inside a hole): one centre
+    hole plus the rest evenly on a ring at 45 % of the inner floor radius r_inner."""
+    n, r = args.drain_holes, args.drain_dia / 2
+    pts = [(0.0, 0.0)] if n >= 1 else []
+    pts += [(0.45 * r_inner * math.cos(2 * math.pi * k / (n - 1)),
+             0.45 * r_inner * math.sin(2 * math.pi * k / (n - 1))) for k in range(n - 1)]
+    d = np.full(np.broadcast(X, Y).shape, 1e3)
+    for px, py in pts:
+        d = np.minimum(d, np.hypot(X - px, Y - py) - r)
+    return d
+
+
 def groove_geometry(args):
     """Continuous snap groove in the bottom band's outer face (--clip-groove), or None.
     Returns (z0, depth, opening) in pot coordinates: flat groove floor at z0 (the clip's
@@ -340,6 +353,8 @@ def fingerprint(args, struts=None):
     any parameter or library change that moves a strut changes it."""
     d = vars(args)
     keys = [k for k in SHAPE_KEYS if k in d and not (k == "height" and d.get("shape") == "orb")]
+    if d.get("wall_style") == "solid":        # only then: Voronoi pots keep their hash
+        keys += ["wall_style"]
     if d.get("clip_groove"):                  # only then: older/groove-less pots keep their hash
         keys += ["clip_groove", "groove_depth", "groove_height", "layer"]   # layer: groove floor
     out = {"shape": hashlib.sha256(json.dumps({k: d[k] for k in keys}, sort_keys=True).encode()).hexdigest()[:12]}
