@@ -3,6 +3,17 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.11.0 (2026-10-19)
+- `--vent-slots N` for solid pots (box, cylinder, orb): vertical ventilation slots under the
+  rim, for orchids that need more air than house plants.
+  - `--vent-width` 4 mm and `--vent-height` 25 mm by default; 45° pointed top, so no
+    support is needed. The apex sits at the rim bottom.
+  - The slots sit between the eyelets, with at least 4 mm of wall between two slots
+    (otherwise an error).
+  - The report gains a `vent_slots` entry.
+- `--vent-*` without `--wall-style solid`, and width/height without `--vent-slots`, are errors.
+- Pots without slots unchanged; new test.
+
 ## v0.10.1 (2026-10-19)
 - `--clip-hook` together with `--clip-groove` (also from `--from-report`) is now an error.
   It was silently ignored: in groove mode the hook reach is `--groove-depth` −

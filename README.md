@@ -106,6 +106,9 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--wall` | voronoi 5, solid 2.4 (3.2 with `--clip-groove`) | 4–6 (voronoi), 1.8–3.2 (solid) | Wall thickness |
 | `--drain-holes` | 5 (solid only) | 0–9 | Solid pots: drainage holes in the floor (centre + ring); 0 = closed bowl |
 | `--drain-dia` | 8 | 5–12 | Solid pots: drainage hole diameter |
+| `--vent-slots` | 0 | 6–16 | Solid pots: vertical ventilation slots under the rim, between the eyelets; 0 = none |
+| `--vent-width` | 4 | 3–6 | Solid pots: vent slot width (needs `--vent-slots`) |
+| `--vent-height` | 25 | 15–40 | Solid pots: vent slot height incl. the pointed top (needs `--vent-slots`) |
 | `--strut` | 4.5 | 4–5 | Wall strut width (about 10 lines at 0.42 mm) |
 | `--edge-round` | 1.0 | 0.5–1.5 | Rounding of the strut face edges |
 | `--cell` | 17 | 14–20 | Wall cell size (seed spacing). Smaller means smaller openings, more weight |
@@ -249,12 +252,23 @@ A plain closed pot for ordinary plants, for all three shapes:
 - **Drainage:** 5 holes × Ø 8 mm (centre + ring) by default.
 - **Reused:** rim, eyelets, snap groove, tray, clip tray (groove mode only, since a solid
   wall has no lattice gaps) and planter work as for Voronoi pots.
+- **Ventilation slots** (`--vent-slots N`): for orchids that need more air than house
+  plants but less than Vandas.
+  - N vertical slots, 4 × 25 mm by default, with a 45° pointed top, so they print
+    without support. The apex sits at the rim bottom, so the rim stays a closed ring.
+  - The slots sit between the eyelets; choose N as a multiple of `--eyelets`.
+  - At least 4 mm of wall stays between two slots, otherwise the program stops with an
+    error.
+  - The report lists `vent_slots` (position, narrowest wall between slots, open area).
+    Example: 12 default slots ≈ 11.5 cm².
+  - Narrow slots (≤ 4–5 mm) also keep coarse bark inside.
 - **Speed:** no strut graph, so a build takes about 30 s.
 - **Weights with defaults:** box about 234 g, cylinder `--taper 8` about 162 g, orb about
   188 g. All prints need no support.
 
 ```bash
 python3 orchid_pot.py cylinder --taper 8 --wall-style solid --eyelets 0 --parts pot,tray
+python3 orchid_pot.py box --wall-style solid --vent-slots 12          # orchid with vents
 ```
 
 ## How printability is ensured

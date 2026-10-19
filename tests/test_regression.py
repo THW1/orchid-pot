@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 import pytest
+import trimesh
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "tests" / "golden"
@@ -149,3 +150,22 @@ def test_clip_hook_with_groove_is_an_error(tmp_path):
     rep.write_text(json.dumps({"params": {"shape": "box", "clip_groove": True, "out": str(tmp_path / "p")}}))
     r = run("box", "--from-report", str(rep), "--parts", "tray", "--tray", "clip", "--clip-hook", "0.8")
     assert r.returncode == 2 and "only applies to lattice clips" in r.stderr
+
+
+def test_solid_vent_slots(tmp_path):
+    """--vent-slots: n slots cut through the wall under the rim (n wall pieces in a slice),
+    still one body without islands; misuse is an error."""
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("box", "--vent-slots", "8", "--graph-only")
+    assert r.returncode == 2 and "only apply to --wall-style solid" in r.stderr
+    r = run("box", "--wall-style", "solid", "--vent-width", "5", "--graph-only")
+    assert r.returncode == 2 and "need --vent-slots" in r.stderr
+    r = run("cylinder", "--wall-style", "solid", "--vent-slots", "60", "--out", str(tmp_path / "x"))
+    assert r.returncode != 0 and "wall between slots" in r.stderr
+    out = tmp_path / "v"
+    run("cylinder", "--wall-style", "solid", "--vent-slots", "8", "--eyelets", "0", "--out", str(out))
+    rep = json.loads((tmp_path / "v_report.json").read_text())
+    assert rep["vent_slots"]["n"] == 8 and rep["bodies"] == 1 and rep["unsupported_islands"] == 0
+    sec = trimesh.load(str(out) + ".stl").section(plane_origin=[0, 0, 80], plane_normal=[0, 0, 1])
+    assert len(sec.to_2D()[0].polygons_full) == 8

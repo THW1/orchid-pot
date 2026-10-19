@@ -72,7 +72,8 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `--wall-style solid` switches off the lattice in `orchid_pot.py::build_pot` /
   `orb.py::run` and makes wall and floor solid in `orchid_pot.py::build_sdf` /
   `orb.py::build_orb_sdf` (hard union with band/rim; drain holes from
-  `potlib.py::drain_holes_sdf`).
+  `potlib.py::drain_holes_sdf`; vent slots from `potlib.py::vent_geometry` /
+  `vent_slots_sdf`, a horizontal cut through the wall under the rim).
 - `potlib.py::groove_geometry` / `potlib.py::groove_sdf` define the snap groove for both
   the pot cut (`orchid_pot.py::build_sdf`, `orb.py::build_orb_sdf`) and the groove clips
   (`accessories.py::clip_geometry_groove`). `clip_groove` is a pot option despite its prefix

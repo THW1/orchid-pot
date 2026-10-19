@@ -44,6 +44,7 @@ from scipy.spatial import SphericalVoronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction,
                     drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings, round_isect,
+                    vent_geometry, vent_slots_sdf,
                     rounded_box2, smin, wall_metrics)
 
 
@@ -471,6 +472,17 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         near = (Zs > gg[0] - 1) & (Zs < gg[0] + gg[2] + 1)
         g.D[ix[near], iy[near], izz[near]] = np.maximum(g.D[ix[near], iy[near], izz[near]],
                                                         -groove_sdf(n[near], Zs[near], gg))
+    zv = (H - args.rim - args.vent_height, H - args.rim)
+    vg = vent_geometry(args, H, 2 * math.pi * a * float(np.min(np.sin(sh.phi_of_z(zv)))), stats)
+    if vg is not None:
+        # horizontal cut through the shell: phase/perimeter at the voxel's own height and
+        # azimuth (eyelets at theta = 0), so the 45 deg roof holds on the leaning shell
+        ix, iy, izz = sel_idx.T
+        near = (Zs > vg[0] - 1) & (Zs < vg[1] + 1)
+        frac = (th2[ix[near], iy[near]] / (2 * math.pi)) % 1.0
+        L = 2 * math.pi * a * np.sin(sh.phi_of_z(Zs[near]))
+        g.D[ix[near], iy[near], izz[near]] = np.maximum(g.D[ix[near], iy[near], izz[near]],
+                                                        -vent_slots_sdf(frac, L, Zs[near], args, vg[1]))
     grow_rim_gussets(args, sh, g, gaps, sel_idx, aw, stats)
     for iz, z in enumerate(g.ax[2]):
         g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -z)

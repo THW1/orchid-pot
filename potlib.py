@@ -316,6 +316,43 @@ def drain_holes_sdf(X, Y, args, r_inner):
     return d
 
 
+VENT_MIN_PILLAR = 4.0                      # wall left between two vent slots [mm]
+
+
+def vent_geometry(args, H, L_min, stats):
+    """Vertical ventilation slots under the rim of a solid pot (--vent-slots), or None.
+    Returns (z_bottom, z_apex). The apex sits at the rim bottom, so the full rim stays a
+    closed ring. L_min: smallest mid-surface perimeter over the slot height (pillar check)."""
+    if not args.vent_slots or args.wall_style != "solid":
+        return None
+    n, w, h = args.vent_slots, args.vent_width, args.vent_height
+    zt = H - args.rim
+    zb = zt - h
+    if zb < args.band + 2.0:
+        raise SystemExit(f"--vent-height {h}: slots would reach into the bottom band "
+                         f"(max {zt - args.band - 2.0:.1f} mm)")
+    pillar = L_min / n - w
+    if pillar < VENT_MIN_PILLAR:
+        raise SystemExit(f"--vent-slots {n}: only {pillar:.1f} mm wall between slots "
+                         f"(need >= {VENT_MIN_PILLAR}); max {int(L_min // (w + VENT_MIN_PILLAR))} slots")
+    stats["vent_slots"] = {"n": n, "width/height_mm": [w, h], "z_bottom/apex_mm": [round(zb, 1), round(zt, 1)],
+                           "pillar_min_mm": round(pillar, 1),
+                           "open_area_cm2": round(n * (w * (h - w / 2) + w * w / 4) / 100, 1)}
+    return zb, zt
+
+
+def vent_slots_sdf(frac, L, z, args, zt):
+    """2D SDF (negative inside) of the vent slots at perimeter fraction frac in [0, 1)
+    (0 = first eyelet position; slot k is centred at (k + 0.5)/n, i.e. between eyelets),
+    perimeter L and height z. Flat bottom, 45 deg pointed roof with its apex at zt: prints
+    without support. Applied as a horizontal cut through the wall."""
+    n, w = args.vent_slots, args.vent_width / 2
+    q = frac * n
+    du = np.abs(q - np.floor(q) - 0.5) * L / n
+    zb = zt - args.vent_height
+    return np.maximum(np.maximum(du - w, zb - z), (z + du - zt) / math.sqrt(2))
+
+
 def groove_geometry(args):
     """Continuous snap groove in the bottom band's outer face (--clip-groove), or None.
     Returns (z0, depth, opening) in pot coordinates: flat groove floor at z0 (the clip's

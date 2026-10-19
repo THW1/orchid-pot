@@ -77,6 +77,7 @@ from scipy.spatial import Voronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
                     drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
+                    vent_geometry, vent_slots_sdf,
                     round_isect, rounded_box2, seg_seg_dist, smin, wall_metrics)
 
 
@@ -94,6 +95,11 @@ def parse_args(argv=None):
     g.add_argument("--drain-holes", type=int, default=None,
                    help="solid pots: drainage holes in the floor (default 5; 0 = closed bowl)")
     g.add_argument("--drain-dia", type=float, default=8.0, help="solid pots: drainage hole diameter [mm]")
+    g.add_argument("--vent-slots", type=int, default=0,
+                   help="solid pots: vertical ventilation slots under the rim (0 = none)")
+    g.add_argument("--vent-width", type=float, default=4.0, help="solid pots: vent slot width [mm]")
+    g.add_argument("--vent-height", type=float, default=25.0,
+                   help="solid pots: vent slot height incl. the pointed top [mm]")
     g.add_argument("--strut", type=float, default=4.5, help="wall strut width in the wall plane [mm]")
     g.add_argument("--cell", type=float, default=17.0, help="seed spacing of the wall Voronoi [mm]")
     g.add_argument("--eyelets", type=int, default=None,
@@ -205,14 +211,21 @@ def parse_args(argv=None):
     if args.floor is None:
         args.floor = 2.4 if solid else 5.0
     drain = sorted(o for o in {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}
-                   if o.startswith("--drain-"))
+                   if o.startswith(("--drain-", "--vent-")))
     if drain and not solid:
-        p.error(f"{', '.join(drain)} only apply to --wall-style solid (the lattice floor is open)")
+        p.error(f"{', '.join(drain)} only apply to --wall-style solid (the lattice is open)")
     if solid:
         if args.drain_holes is None:
             args.drain_holes = 5
         if args.drain_holes < 0:
             p.error("--drain-holes must be >= 0")
+        if args.vent_slots < 0:
+            p.error("--vent-slots must be >= 0")
+        vent = [o for o in drain if o in ("--vent-width", "--vent-height")]
+        if vent and not args.vent_slots:
+            p.error(f"{', '.join(vent)} need --vent-slots")
+        if args.vent_slots and not 2.0 <= args.vent_width <= args.vent_height:
+            p.error("--vent-width must be >= 2 mm and <= --vent-height")
         if args.tray == "clip" and "tray" in args.parts and not args.clip_groove:
             p.error("--wall-style solid: a clip tray needs --clip-groove (no lattice gaps to hook into)")
     if args.clip_groove:
@@ -840,6 +853,10 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
 
     zc_b = args.band / 2 - 1
     gg = groove_geometry(args)
+    L_vent = fr.P * min(float(np.min(fr.scale(z)[0])) for z in (H - args.rim - args.vent_height, H - args.rim))
+    vg = vent_geometry(args, H, L_vent, stats)
+    if vg is not None:                         # perimeter fraction from the first eyelet position
+        vfrac = ((uxy - fr.eyelet_u(1)[0]) / fr.P) % 1.0
     for iz, z in enumerate(g.ax[2]):
         dpat = np.interp(uxy, U, F[iz], period=fr.P)
         if solid_wall and z <= H - args.rim / 2:   # solid wall into the rim (it rounds the
@@ -859,6 +876,10 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
             # snap groove: n = horizontal depth from the outer face (cone: normal / cos(taper))
             n = -dout_z / getattr(fr, "cos_t", 1.0)
             g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -groove_sdf(n, z, gg))
+        if vg is not None and vg[0] - 1 < z < vg[1] + 1:
+            # horizontal cut through the wall (only the wall exists at this height)
+            L = fr.P * float(np.min(fr.scale(z)[0]))
+            g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -vent_slots_sdf(vfrac, L, z, args, vg[1]))
     return g
 
 
