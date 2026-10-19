@@ -195,6 +195,10 @@ def parse_args(argv=None):
     check_unused_options(p, args, sys.argv[1:] if argv is None else argv)
     if args.from_report:
         apply_report(p, args)
+    # after apply_report: a groove may also come from the pot's report
+    if args.clip_groove and "--clip-hook" in {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}:
+        p.error("--clip-hook only applies to lattice clips (no --clip-groove); with a groove the hook "
+                "reach is --groove-depth minus --clip-clearance")
     solid = args.wall_style == "solid"
     if args.wall is None:
         args.wall = (3.2 if args.clip_groove else 2.4) if solid else 5.0

@@ -156,7 +156,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--clip-width` | lattice 8, groove 10 | 5–10 (lattice), 8–12 (groove) | Clip width along the band |
 | `--clip-strain` | 1.5 | 1.2–1.8 | Max arm bending strain in %, sets the arm length (and with it the standoff). Lower = longer, gentler arm |
 | `--clip-thickness` | 1.6 | 1.2–2.0 | Clip arm thickness (4 lines). Thicker = stiffer, needs a longer arm |
-| `--clip-hook` | 0.6 | 0.4–1.0 | Hook reach onto the flat band top, past the band's 1.5 mm edge rounding |
+| `--clip-hook` | 0.6 | 0.4–1.0 | Hook reach onto the flat band top, past the band's 1.5 mm edge rounding. Lattice clips only: with `--clip-groove` the reach is `--groove-depth` − `--clip-clearance`, and `--clip-hook` is an error |
 | `--clip-clearance` | 0.3 | 0.2–0.5 | Clearance between clip and pot; adjust after a test print |
 
 **Clip tray, two modes:**

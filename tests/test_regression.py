@@ -136,3 +136,16 @@ def test_solid_wall_pot_with_saucer(tmp_path):
     assert pot["params"]["wall"] == 2.4 and pot["params"]["drain_holes"] == 5
     assert pot["stl_roundtrip_watertight"] and pot["bodies"] == 1 and pot["unsupported_islands"] == 0
     assert json.loads((tmp_path / "s_tray_report.json").read_text())["fit_check"]["ok"]
+
+
+def test_clip_hook_with_groove_is_an_error(tmp_path):
+    """--clip-hook has no effect in groove mode (reach = groove depth - clearance): error,
+    also when the groove comes from the pot's report via --from-report."""
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("box", "--clip-groove", "--parts", "tray", "--tray", "clip", "--clip-hook", "0.8")
+    assert r.returncode == 2 and "only applies to lattice clips" in r.stderr
+    rep = tmp_path / "p_report.json"
+    rep.write_text(json.dumps({"params": {"shape": "box", "clip_groove": True, "out": str(tmp_path / "p")}}))
+    r = run("box", "--from-report", str(rep), "--parts", "tray", "--tray", "clip", "--clip-hook", "0.8")
+    assert r.returncode == 2 and "only applies to lattice clips" in r.stderr

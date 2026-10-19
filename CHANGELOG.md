@@ -3,6 +3,11 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.10.1 (2026-10-19)
+- `--clip-hook` together with `--clip-groove` (also from `--from-report`) is now an error.
+  It was silently ignored: in groove mode the hook reach is `--groove-depth` −
+  `--clip-clearance`. New test; pots and trays unchanged.
+
 ## v0.10.0 (2026-10-18)
 - `--wall-style solid`: plain closed pots for ordinary plants (box, cylinder, orb).
   - Solid wall and floor, default 2.4 mm (3.2 mm with `--clip-groove`).
