@@ -895,8 +895,10 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
         band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
         flo = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
-        if mt is not None:                     # floor membrane: plate on the underside
-            flo = smin(flo, np.maximum(dfoot + 1.0, z - args.membrane), k)
+        if mt is not None:                     # floor membrane: plate on the underside; hard
+            # union: plate and lattice share the dfoot + 1 edge, and a smooth union of it
+            # pushed the band face out > 0.2 mm (groove clip arms hit it, v0.12.1)
+            flo = np.minimum(flo, np.maximum(dfoot + 1.0, z - args.membrane))
         solid = smin(smin(band, rim, 2.0), flo, 2.0)
         # solid wall and band/rim coincide: a smooth union of identical surfaces would push
         # the face out by k/4 (0.4 mm ridge at band and rim; a groove clip touched it)

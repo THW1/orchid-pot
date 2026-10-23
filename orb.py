@@ -445,8 +445,9 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
 
     for iz, z in enumerate(g.ax[2]):
         g.D[:, :, iz] = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
-        if mt is not None:                     # floor membrane: plate on the underside
-            g.D[:, :, iz] = smin(g.D[:, :, iz], np.maximum(sh.footprint_sdf(X2, Y2) + 1.0, z - args.membrane), k)
+        if mt is not None:                     # floor membrane: plate on the underside (hard
+            # union, shared edge with the lattice floor: see orchid_pot.py::build_sdf)
+            g.D[:, :, iz] = np.minimum(g.D[:, :, iz], np.maximum(sh.footprint_sdf(X2, Y2) + 1.0, z - args.membrane))
     ix, iy, izz = sel_idx.T
     flo = g.D[ix, iy, izz]
     # solid shell and band/rim coincide: hard union (a smooth one would add a 0.4 mm ridge)

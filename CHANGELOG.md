@@ -3,6 +3,15 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.12.1 (2026-10-23)
+- Fix: the groove clip tray did not fit a `--membrane` pot (fit check: seated overlap
+  1.2 mm³). The floor plate shares its edge with the lattice floor; their smooth union
+  pushed the band's outer face out by more than the 0.2 mm clip clearance. Now a hard
+  union (box, cylinder, orb); band face as without membrane (±0.01 mm). New test.
+- Mesh tail: harmless trimesh divide-by-zero warnings on zero-volume slivers are silenced.
+  `voids_filled` no longer counts zero-volume slivers. Stats of rejected decimation
+  candidates no longer leak into the report.
+
 ## v0.12.0 (2026-10-23)
 - `--membrane [T]` for Voronoi pots (box, cylinder, orb): closes the cells with a thin wall
   (default 1.2 mm = 3 lines) on the inner face, plus a plate on the floor underside with

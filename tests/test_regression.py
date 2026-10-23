@@ -198,3 +198,18 @@ def test_membrane(tmp_path):
     assert len(pieces(30)) == 1 and len(pieces(30)[0].interiors) == 1    # closed ring
     assert len(pieces(58)) > 1                                           # open cells
     assert sum(len(q.interiors) for q in pieces(0.6)) == 5               # plate + drain holes
+
+
+def test_membrane_groove_clip_tray_fits(tmp_path):
+    """v0.12.1: a smooth union of the membrane floor plate with the lattice floor pushed the
+    band face out > 0.2 mm and the groove clip arms (clearance 0.2) hit it."""
+    out = tmp_path / "g"
+    subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "box", "--clip-groove", "--parts", "pot,tray",
+                    "--tray", "clip", "--clips", "4", "--clip-thickness", "2.0", "--clip-clearance", "0.2",
+                    "--size", "70", "--corner-r", "15", "--height", "50", "--zstretch", "1.05", "--seed", "34472",
+                    "--cell", "12", "--floor-cell", "11", "--wall", "4", "--strut", "4", "--merge", "2",
+                    "--voxel", "0.3", "--floor", "4", "--groove-depth", "2.0", "--eyelets", "0",
+                    "--membrane", "0.8", "--membrane-top", "35", "--out", str(out)],
+                   check=True, capture_output=True)
+    fc = json.loads((tmp_path / "g_tray_clip_report.json").read_text())["fit_check"]
+    assert fc["ok"] and fc["seated_overlap_mm3"] == 0.0

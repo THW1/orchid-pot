@@ -222,7 +222,8 @@ def to_mesh(g, stats):
     # made the decimated mesh non-watertight.
     parts = mesh.split(only_watertight=False)
     if len(parts) > 1:
-        keep = [q for q in parts if abs(q.volume) >= 1.0]
+        with np.errstate(divide="ignore", invalid="ignore"):   # zero-volume slivers
+            keep = [q for q in parts if abs(q.volume) >= 1.0]
         stats["micro_voids_filled"] = len(parts) - len(keep)
         mesh = trimesh.util.concatenate(keep)
     if mesh.volume < 0:
@@ -436,15 +437,18 @@ def stl_roundtrip(mesh):
 def fill_voids(mesh, stats):
     """Drop shells oriented against the main body: enclosed voids. Decimation can close a
     sub-voxel channel into a void (orb --membrane: 1.3 mm^3 where rim gussets meet the
-    membrane). A single-shell mesh is returned untouched (outputs stay byte-identical)."""
+    membrane). Zero-volume slivers are not voids; export_safe handles them. A single-shell
+    mesh is returned untouched (outputs stay byte-identical)."""
     parts = mesh.split(only_watertight=False)
     if len(parts) < 2:
         return mesh
-    s = math.copysign(1.0, max(parts, key=lambda q: abs(q.volume)).volume)
-    keep = [q for q in parts if q.volume * s > 0]
+    with np.errstate(divide="ignore", invalid="ignore"):       # zero-volume slivers
+        vols = [float(q.volume) for q in parts]
+    s = math.copysign(1.0, max(vols, key=abs))
+    keep = [q for q, v in zip(parts, vols) if v * s > -1e-6]
     if len(keep) == len(parts):
         return mesh
-    stats["voids_filled"] = stats.get("voids_filled", 0) + len(parts) - len(keep)
+    stats["voids_filled"] = len(parts) - len(keep)
     return clean(trimesh.util.concatenate(keep))
 
 
@@ -457,7 +461,8 @@ def export_safe(mesh, stats):
     if ok:
         return mesh
     parts = back.split(only_watertight=False)
-    keep = [q for q in parts if abs(q.volume) >= 1.0]
+    with np.errstate(divide="ignore", invalid="ignore"):       # the slivers have zero volume
+        keep = [q for q in parts if abs(q.volume) >= 1.0]
     fixed = clean(trimesh.util.concatenate(keep))
     if fixed.is_watertight and stl_roundtrip(fixed)[0]:
         stats["stl_slivers_removed"] = stats.get("stl_slivers_removed", 0) + len(parts) - len(keep)
@@ -482,9 +487,11 @@ def finish(g, args, stats, t0, extra_checks=None):
     cand = None
     for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
-        dec = fill_voids(clean(trimesh.Trimesh(v, f, process=True)), stats)
-        cand = export_safe(dec, stats) if dec.is_watertight else None
+        st = {}                                # stats of a rejected candidate are dropped
+        dec = fill_voids(clean(trimesh.Trimesh(v, f, process=True)), st)
+        cand = export_safe(dec, st) if dec.is_watertight else None
         if cand is not None:
+            stats.update(st)
             mesh = cand
             stats["decimation_ratio"] = ratio
             break
