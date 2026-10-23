@@ -3,6 +3,26 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.12.0 (2026-10-23)
+- `--membrane [T]` for Voronoi pots (box, cylinder, orb): closes the cells with a thin wall
+  (default 1.2 mm = 3 lines) on the inner face, plus a plate on the floor underside with
+  drain holes (`--drain-*`, default 5).
+  - The struts stay load-bearing relief outside; the inside is smooth.
+  - Measured membrane 1.20–1.22 mm.
+  - Box 283 g vs 214 g Voronoi.
+- `--membrane-top Z`: the membrane ends at Z, so the cells above stay open for ventilation.
+- Membrane is cut flat at the inner face after the smooth join, so the struts leave no
+  inward bulge.
+- Errors for misuse:
+  - `--membrane*` with solid pots;
+  - `--membrane-top` without `--membrane`;
+  - `--drain-*` on open lattice pots;
+  - a membrane thicker than wall − 1 mm;
+  - lattice clip trays with `--membrane` (needs `--clip-groove`).
+- Mesh tail: enclosed voids that decimation closes off are filled (`voids_filled`;
+  orb `--membrane` had one of 1.3 mm³). Single-shell meshes untouched.
+- Pots without membrane unchanged (goldens byte-identical); new test.
+
 ## v0.11.0 (2026-10-19)
 - `--vent-slots N` for solid pots (box, cylinder, orb): vertical ventilation slots under the
   rim, for orchids that need more air than house plants.

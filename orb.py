@@ -44,7 +44,7 @@ from scipy.spatial import SphericalVoronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction,
                     drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings, round_isect,
-                    vent_geometry, vent_slots_sdf,
+                    membrane_top, membrane_wall, vent_geometry, vent_slots_sdf,
                     rounded_box2, smin, wall_metrics)
 
 
@@ -437,11 +437,16 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     if solid:                                  # closed shell up to the rim top
         Dst = np.maximum(np.full_like(Dst, -10.0), Zs - (H - args.rim / 2))   # rim rounds the top
     wall = round_isect(Dst, aw - t / 2, args.edge_round)
+    mt = membrane_top(args, H, stats)
+    if mt is not None:                         # W + t/2: distance from the inner face
+        wall = membrane_wall(wall, W + t / 2, Zs, args, mt, k)
     band = rounded_box2(aw, np.abs(Zs - (args.band / 2 - 1)), t / 2, args.band / 2 + 1, 1.5)
     rim = rounded_box2(aw, np.abs(Zs - (H - args.rim / 2)), t / 2, args.rim / 2, 2.0)
 
     for iz, z in enumerate(g.ax[2]):
         g.D[:, :, iz] = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
+        if mt is not None:                     # floor membrane: plate on the underside
+            g.D[:, :, iz] = smin(g.D[:, :, iz], np.maximum(sh.footprint_sdf(X2, Y2) + 1.0, z - args.membrane), k)
     ix, iy, izz = sel_idx.T
     flo = g.D[ix, iy, izz]
     # solid shell and band/rim coincide: hard union (a smooth one would add a 0.4 mm ridge)
@@ -460,7 +465,7 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
         ring = round_isect(np.abs(np.hypot(a1, Z - cen[2]) - Rt) - rt, np.abs(ar) - t / 2, args.edge_round)
         g.D[sl] = smin(g.D[sl], ring, k)
 
-    if solid and args.drain_holes:
+    if (solid or mt is not None) and args.drain_holes:
         holes = drain_holes_sdf(X2, Y2, args, sh.r_floor - t / 2)
         for iz in np.where(g.ax[2] < args.floor + 1.0)[0]:
             g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -holes)

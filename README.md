@@ -104,8 +104,10 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--eyelets` | box 4, cylinder/orb 3 | 0, 3, 4 | Hanging eyelets; 0 = standing pot. Box: 0, 2 or 4 (corners) |
 | `--wall-style` | `voronoi` | `voronoi`, `solid` | Voronoi lattice (orchids) or closed solid wall and floor (ordinary plants) |
 | `--wall` | voronoi 5, solid 2.4 (3.2 with `--clip-groove`) | 4–6 (voronoi), 1.8–3.2 (solid) | Wall thickness |
-| `--drain-holes` | 5 (solid only) | 0–9 | Solid pots: drainage holes in the floor (centre + ring); 0 = closed bowl |
-| `--drain-dia` | 8 | 5–12 | Solid pots: drainage hole diameter |
+| `--membrane` | 0 (flag alone: 1.2) | 1.2 (3 lines) | Voronoi pots: close the cells with a thin wall on the inner face and floor underside; 0 = open lattice |
+| `--membrane-top` | up to the rim | band … rim bottom | Membrane ends at this height [mm]; the cells above stay open for ventilation (needs `--membrane`) |
+| `--drain-holes` | 5 (solid or membrane only) | 0–9 | Solid or membrane pots: drainage holes in the floor (centre + ring); 0 = closed bowl |
+| `--drain-dia` | 8 | 5–12 | Solid or membrane pots: drainage hole diameter |
 | `--vent-slots` | 0 | 6–16 | Solid pots: vertical ventilation slots under the rim, between the eyelets; 0 = none |
 | `--vent-width` | 4 | 3–6 | Solid pots: vent slot width (needs `--vent-slots`) |
 | `--vent-height` | 25 | 15–40 | Solid pots: vent slot height incl. the pointed top (needs `--vent-slots`) |
@@ -271,6 +273,26 @@ python3 orchid_pot.py cylinder --taper 8 --wall-style solid --eyelets 0 --parts 
 python3 orchid_pot.py box --wall-style solid --vent-slots 12          # orchid with vents
 ```
 
+## Membrane pots (`--membrane`)
+
+A Voronoi pot whose cells are closed by a thin wall, to keep the moisture in. The struts
+stay load-bearing and visible as relief outside; the inside is smooth.
+- **Membrane:** 1.2 mm (3 lines at 0.4 mm) on the inner face of the wall, and as a plate
+  on the floor underside, with drain holes (`--drain-*`, default 5 × Ø 8 mm).
+- **Ventilation:** `--membrane-top Z` ends the membrane at height Z; the cells above stay
+  open, like a Voronoi pot. The report's `membrane` entry lists thickness, top and the
+  open height below the rim.
+- **Printing:** the membrane rises from the band, so every layer rests on the one below.
+  Struts and rim gussets are as in the Voronoi pot.
+- **Weight with defaults:** box about 283 g (Voronoi 214 g).
+- **Clip tray:** needs `--clip-groove` (the membrane makes the lattice gaps too shallow
+  for hooks). Saucer, groove clips and planter fit as before.
+
+```bash
+python3 orchid_pot.py box --membrane                                   # closed up to the rim
+python3 orchid_pot.py cylinder --taper 8 --membrane --membrane-top 75  # open top cells
+```
+
 ## How printability is ensured
 
 - **Nodes:** every strut junction needs a strut below it steeper than `--min-angle`.
@@ -310,6 +332,7 @@ Key fields to check after each run:
 | `stability.tip_over_angle_deg` | orb only: tilt at which the empty pot tips over |
 | `strut_crossings` | 0 |
 | `wall_metrics.inscribed_dia_mm_p50/p90/max` | Opening size; fits roots or medium? |
+| `voids_filled` | Enclosed voids that decimation closed off and the mesh step filled (informational) |
 | `mass_g_petg_1.27` | Weight estimate (PETG 1.23–1.29 g/cm³) |
 
 `cantilevers` approximates OrcaSlicer's rule (TreeSupport: an overhang point more than

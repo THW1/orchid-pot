@@ -169,3 +169,32 @@ def test_solid_vent_slots(tmp_path):
     assert rep["vent_slots"]["n"] == 8 and rep["bodies"] == 1 and rep["unsupported_islands"] == 0
     sec = trimesh.load(str(out) + ".stl").section(plane_origin=[0, 0, 80], plane_normal=[0, 0, 1])
     assert len(sec.to_2D()[0].polygons_full) == 8
+
+
+def test_membrane(tmp_path):
+    """--membrane closes the cells on the inner face and the floor underside (drain holes);
+    --membrane-top leaves the cells above open. One body, no islands; misuse is an error."""
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("box", "--wall-style", "solid", "--membrane", "--graph-only")
+    assert r.returncode == 2 and "only apply to Voronoi pots" in r.stderr
+    r = run("box", "--membrane-top", "60", "--graph-only")
+    assert r.returncode == 2 and "needs --membrane" in r.stderr
+    r = run("box", "--drain-holes", "3", "--graph-only")
+    assert r.returncode == 2 and "or --membrane" in r.stderr
+    r = run("box", "--membrane", "4.5", "--graph-only")
+    assert r.returncode == 2 and "struts must still stand out" in r.stderr
+    r = run("box", "--membrane", "--parts", "tray", "--tray", "clip")
+    assert r.returncode == 2 and "needs --clip-groove" in r.stderr
+    out = tmp_path / "m"
+    run("cylinder", "--diameter", "100", "--height", "70", "--eyelets", "0", "--membrane",
+        "--membrane-top", "45", "--out", str(out))
+    rep = json.loads((tmp_path / "m_report.json").read_text())
+    assert rep["membrane"] == {"thickness_mm": 1.2, "top_mm": 45.0, "open_below_rim_mm": 19.0}
+    assert rep["params"]["drain_holes"] == 5
+    assert rep["bodies"] == 1 and rep["unsupported_islands"] == 0 and rep["stl_roundtrip_watertight"]
+    mesh = trimesh.load(str(out) + ".stl")
+    pieces = lambda z: mesh.section(plane_origin=[0, 0, z], plane_normal=[0, 0, 1]).to_2D()[0].polygons_full
+    assert len(pieces(30)) == 1 and len(pieces(30)[0].interiors) == 1    # closed ring
+    assert len(pieces(58)) > 1                                           # open cells
+    assert sum(len(q.interiors) for q in pieces(0.6)) == 5               # plate + drain holes

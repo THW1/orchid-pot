@@ -4,7 +4,7 @@
 # Purpose:     Generate a printable STL of an orchid basket/pot (Vanda style) with planar
 #              Voronoi walls and floor, solid bottom band, top rim and optional flat hanging
 #              eyelets (--wall-style solid: plain closed walls/floor with drain holes, for
-#              ordinary plants). Shapes are subcommands: box (rounded square), cylinder (optionally
+#              ordinary plants; --membrane: Voronoi cells closed by a thin inner wall). Shapes are subcommands: box (rounded square), cylinder (optionally
 #              tapered) and the experimental orb (implemented in orb.py, imported only for
 #              `orb`). Target: PETG, 0.4 mm nozzle, printed upright without supports.
 # Decisions:   Walls are a planar (2D) Voronoi on the unrolled wall (u = arc length
@@ -77,7 +77,7 @@ from scipy.spatial import Voronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
                     drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
-                    vent_geometry, vent_slots_sdf,
+                    membrane_top, membrane_wall, vent_geometry, vent_slots_sdf,
                     round_isect, rounded_box2, seg_seg_dist, smin, wall_metrics)
 
 
@@ -92,9 +92,16 @@ def parse_args(argv=None):
                    help="voronoi lattice (orchids) or solid closed walls (ordinary plants)")
     g.add_argument("--wall", type=float, default=None,
                    help="wall thickness [mm] (default: voronoi 5; solid 2.4, with --clip-groove 3.2)")
+    g.add_argument("--membrane", type=float, nargs="?", const=1.2, default=0.0,
+                   help="voronoi pots: close the cells with a thin wall on the inner face and floor "
+                        "underside [mm] (flag alone: 1.2 = 3 lines; 0 = open lattice)")
+    g.add_argument("--membrane-top", type=float, default=None,
+                   help="membrane ends at this height [mm]; cells above stay open for ventilation "
+                        "(default: up to the rim)")
     g.add_argument("--drain-holes", type=int, default=None,
-                   help="solid pots: drainage holes in the floor (default 5; 0 = closed bowl)")
-    g.add_argument("--drain-dia", type=float, default=8.0, help="solid pots: drainage hole diameter [mm]")
+                   help="solid or membrane pots: drainage holes in the floor (default 5; 0 = closed bowl)")
+    g.add_argument("--drain-dia", type=float, default=8.0,
+                   help="solid or membrane pots: drainage hole diameter [mm]")
     g.add_argument("--vent-slots", type=int, default=0,
                    help="solid pots: vertical ventilation slots under the rim (0 = none)")
     g.add_argument("--vent-width", type=float, default=4.0, help="solid pots: vent slot width [mm]")
@@ -211,9 +218,28 @@ def parse_args(argv=None):
     if args.floor is None:
         args.floor = 2.4 if solid else 5.0
     drain = sorted(o for o in {t.split("=")[0] for t in (sys.argv[1:] if argv is None else argv)}
-                   if o.startswith(("--drain-", "--vent-")))
-    if drain and not solid:
-        p.error(f"{', '.join(drain)} only apply to --wall-style solid (the lattice is open)")
+                   if o.startswith(("--drain-", "--vent-", "--membrane")))
+    vent = [o for o in drain if o.startswith("--vent-")]
+    if vent and not solid:
+        p.error(f"{', '.join(vent)} only apply to --wall-style solid (the lattice is open; "
+                f"with --membrane use --membrane-top)")
+    if [o for o in drain if o.startswith("--membrane")] and solid:
+        p.error("--membrane* only apply to Voronoi pots (a solid wall is closed already)")
+    if [o for o in drain if o.startswith("--drain-")] and not (solid or args.membrane):
+        p.error("--drain-* only apply to --wall-style solid or --membrane (the lattice floor is open)")
+    if "--membrane-top" in drain and not args.membrane:
+        p.error("--membrane-top needs --membrane")
+    if args.membrane:
+        if not 0.8 <= args.membrane <= args.wall - 1.0:
+            p.error(f"--membrane must be in [0.8, --wall - 1.0 = {args.wall - 1.0}] mm "
+                    f"(the struts must still stand out)")
+        if args.drain_holes is None:
+            args.drain_holes = 5
+        if args.drain_holes < 0:
+            p.error("--drain-holes must be >= 0")
+        if args.tray == "clip" and "tray" in args.parts and not args.clip_groove:
+            p.error("--membrane: a clip tray needs --clip-groove (the membrane makes the lattice "
+                    "gaps too shallow for hooks)")
     if solid:
         if args.drain_holes is None:
             args.drain_holes = 5
@@ -847,7 +873,8 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     uxy = fr.unmap_u(*np.broadcast_arrays(X2, Y2))
     solid_wall = args.wall_style == "solid"
     fl = dfoot + 1.0 if solid_wall else floor_field(g, fsegs, dfoot, args)
-    if solid_wall and args.drain_holes:
+    mt = membrane_top(args, H, stats)
+    if (solid_wall or mt is not None) and args.drain_holes:
         r_in = (half - args.wall) if args.shape == "box" else float(fr.r_mid(0.0)) - args.wall / 2
         holes = drain_holes_sdf(X2, Y2, args, r_in)
 
@@ -863,14 +890,18 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
             dpat = np.full_like(dpat, -10.0)         # top edge); eyelets stay from F
         dout_z, pw = fr.wall_fields(X2, Y2, z)
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
+        if mt is not None:                     # dout_z + t: distance from the inner face
+            wall = membrane_wall(wall, dout_z + fr.t, z, args, mt, k)
         band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
         flo = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
+        if mt is not None:                     # floor membrane: plate on the underside
+            flo = smin(flo, np.maximum(dfoot + 1.0, z - args.membrane), k)
         solid = smin(smin(band, rim, 2.0), flo, 2.0)
         # solid wall and band/rim coincide: a smooth union of identical surfaces would push
         # the face out by k/4 (0.4 mm ridge at band and rim; a groove clip touched it)
         g.D[:, :, iz] = np.maximum(np.minimum(wall, solid) if solid_wall else smin(wall, solid, k), -z)
-        if solid_wall and args.drain_holes and z < args.floor + 1.0:
+        if (solid_wall or mt is not None) and args.drain_holes and z < args.floor + 1.0:
             g.D[:, :, iz] = np.maximum(g.D[:, :, iz], -holes)
         if gg is not None and gg[0] - 1 < z < gg[0] + gg[2] + 1:
             # snap groove: n = horizontal depth from the outer face (cone: normal / cos(taper))

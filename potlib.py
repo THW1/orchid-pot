@@ -316,6 +316,31 @@ def drain_holes_sdf(X, Y, args, r_inner):
     return d
 
 
+def membrane_top(args, H, stats):
+    """Top height of the cell membrane (--membrane), or None when off. Default: into the
+    rim (closed up to the top); --membrane-top lower leaves the cells above it open."""
+    if not getattr(args, "membrane", 0):
+        return None
+    if args.membrane_top is None:
+        zt = H - args.rim / 2
+    elif args.band < args.membrane_top <= H - args.rim:
+        zt = args.membrane_top
+    else:
+        raise SystemExit(f"--membrane-top must be in (--band, rim bottom] = ({args.band}, {H - args.rim:.1f}] mm")
+    stats["membrane"] = {"thickness_mm": args.membrane, "top_mm": round(zt, 1),
+                         "open_below_rim_mm": round(max(H - args.rim - zt, 0.0), 1)}
+    return zt
+
+
+def membrane_wall(wall, d_in, z, args, zt, k):
+    """Lattice wall SDF plus the cell membrane: a slab of --membrane thickness on the inner
+    face (d_in = distance from the inner face towards the outside), up to height zt.
+    The membrane is a half-space smooth-joined to the struts (fillet k at the strut sides)
+    and only then cut flat at the inner face: a smooth union of the coinciding inner faces
+    would bulge them inwards by k/4 (cf. the solid-wall band ridge)."""
+    return np.maximum(smin(wall, np.maximum(d_in - args.membrane, z - zt), k), -d_in)
+
+
 VENT_MIN_PILLAR = 4.0                      # wall left between two vent slots [mm]
 
 
@@ -408,6 +433,21 @@ def stl_roundtrip(mesh):
     return bool(back.is_watertight), back
 
 
+def fill_voids(mesh, stats):
+    """Drop shells oriented against the main body: enclosed voids. Decimation can close a
+    sub-voxel channel into a void (orb --membrane: 1.3 mm^3 where rim gussets meet the
+    membrane). A single-shell mesh is returned untouched (outputs stay byte-identical)."""
+    parts = mesh.split(only_watertight=False)
+    if len(parts) < 2:
+        return mesh
+    s = math.copysign(1.0, max(parts, key=lambda q: abs(q.volume)).volume)
+    keep = [q for q in parts if q.volume * s > 0]
+    if len(keep) == len(parts):
+        return mesh
+    stats["voids_filled"] = stats.get("voids_filled", 0) + len(parts) - len(keep)
+    return clean(trimesh.util.concatenate(keep))
+
+
 def export_safe(mesh, stats):
     """The mesh as it will be in the STL file. If the float32 round trip breaks it (vertices
     that merge in float32 split off zero-volume two-triangle slivers; seen on box --seed 3),
@@ -442,7 +482,7 @@ def finish(g, args, stats, t0, extra_checks=None):
     cand = None
     for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
-        dec = clean(trimesh.Trimesh(v, f, process=True))
+        dec = fill_voids(clean(trimesh.Trimesh(v, f, process=True)), stats)
         cand = export_safe(dec, stats) if dec.is_watertight else None
         if cand is not None:
             mesh = cand

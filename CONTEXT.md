@@ -74,6 +74,11 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
   `orb.py::build_orb_sdf` (hard union with band/rim; drain holes from
   `potlib.py::drain_holes_sdf`; vent slots from `potlib.py::vent_geometry` /
   `vent_slots_sdf`, a horizontal cut through the wall under the rim).
+- `--membrane` adds `potlib.py::membrane_wall` (inner-face slab, smooth-joined to the
+  struts, then cut flat at the inner face) to the lattice wall in
+  `orchid_pot.py::build_sdf` / `orb.py::build_orb_sdf`, plus a floor plate on the
+  underside; height limit from `potlib.py::membrane_top`. `potlib.py::fill_voids` in
+  `finish` fills voids that decimation closes off.
 - `potlib.py::groove_geometry` / `potlib.py::groove_sdf` define the snap groove for both
   the pot cut (`orchid_pot.py::build_sdf`, `orb.py::build_orb_sdf`) and the groove clips
   (`accessories.py::clip_geometry_groove`). `clip_groove` is a pot option despite its prefix
