@@ -436,6 +436,15 @@ def stl_roundtrip(mesh):
     return bool(back.is_watertight), back
 
 
+def drop_duplicate_faces(f):
+    """Faces with a vertex triple that occurs more than once, all copies removed. The
+    decimator leaves opposite-facing pairs (a zero-volume double sheet) that make their
+    edges 4-fold; without them the surface closes. No duplicates: f itself (byte-identical)."""
+    _, inv, c = np.unique(np.sort(f, 1), axis=0, return_inverse=True, return_counts=True)
+    dup = c[inv.ravel()] > 1
+    return f[~dup] if dup.any() else f
+
+
 def fill_voids(mesh, stats):
     """Drop shells oriented against the main body: enclosed voids. Decimation can close a
     sub-voxel channel into a void (orb --membrane: 1.3 mm^3 where rim gussets meet the
@@ -483,14 +492,18 @@ def finish(g, args, stats, t0, extra_checks=None):
     mesh = to_mesh(g, stats)
     g.D = None                                 # free the voxel grid (~180 MB) before decimating
     print(f"mesh {time.time() - t0:.1f}s {len(mesh.faces)} tris")
-    # quadric decimation occasionally leaves a non-manifold spot; retry milder once. The
+    # quadric decimation occasionally leaves a non-manifold spot; retry milder. The
     # candidate must also survive the STL round trip: float32 export can collapse a sliver
     # that is fine in memory (seen on a clip tray: watertight in memory, not after reload).
+    # Dense lattices (--cell 3) failed at 0.75 and 0.6 and shipped 2.6M triangles: the
+    # decimator emits opposite-facing duplicate triangles (dropped) and pinches two thin
+    # sheets into one edge (only a milder ratio avoids that), hence the longer ladder.
     cand = None
-    for ratio in (args.decimate, args.decimate * 0.8) if args.decimate > 0 else ():
+    ladder = (args.decimate, args.decimate * 0.8, args.decimate * 2 / 3, args.decimate * 0.4)
+    for ratio in ladder if args.decimate > 0 else ():
         v, f = fast_simplification.simplify(mesh.vertices, mesh.faces, ratio)
         st = {}                                # stats of a rejected candidate are dropped
-        dec = fill_voids(clean(trimesh.Trimesh(v, f, process=True)), st)
+        dec = fill_voids(clean(trimesh.Trimesh(v, drop_duplicate_faces(f), process=True)), st)
         cand = export_safe(dec, st) if dec.is_watertight else None
         if cand is not None:
             stats.update(st)
