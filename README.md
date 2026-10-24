@@ -130,8 +130,9 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--eyelet-wire` | 4.5 | 4–5 | Eyelet ring width |
 | `--fillet` | 1.5 | 1–2 | Fillet radius at strut junctions |
 | `--clip-groove` | off | on for clip trays | Pot option: continuous snap groove in the bottom band for the clip tray. Band becomes 8 mm unless `--band` is given |
-| `--groove-depth` | 1.5 | 1.2–2.0 | Groove depth into the band (must leave ≥ 1.5 mm of the wall) |
+| `--groove-depth` | 1.5 | 1.2–2.0 | Groove depth into the band (must leave ≥ 1.5 mm of the band) |
 | `--groove-height` | 3.0 | 2.5–4.0 | Groove opening height at the outer face (flat floor, 45° ceiling) |
+| `--band-wall` | max(`--wall`, `--groove-depth` + 1.5) | `--wall` … `--wall` + 2 | Bottom band thickness with `--clip-groove`, thickened inward (outer face flush, upward ledge inside). Thin walls keep a full-depth groove: `--wall 2.5 --groove-depth 2.0` gives a 3.5 mm band |
 | `--voxel` | 0.4 | 0.3–0.5 | Mesh resolution. 0.3 is finer but about 2.4× the grid memory and slower |
 | `--decimate` | 0.75 | 0.6–0.8 | Fraction of triangles removed; 0 = off. Retries once milder if the result is not watertight |
 | `--layer` | 0.2 | your layer height | Layer height used by the island and cantilever checks |

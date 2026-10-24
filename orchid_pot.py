@@ -130,6 +130,9 @@ def parse_args(argv=None):
                    help="continuous snap groove in the bottom band for clip trays (band 8 mm unless --band)")
     g.add_argument("--groove-depth", type=float, default=1.5, help="groove depth into the band [mm]")
     g.add_argument("--groove-height", type=float, default=3.0, help="groove opening height at the outer face [mm]")
+    g.add_argument("--band-wall", type=float, default=None,
+                   help="bottom band thickness [mm], thickened inward; the outer face stays flush "
+                        "(default: max(--wall, --groove-depth + 1.5))")
     g = common.add_argument_group("printability (advanced)")
     g.add_argument("--min-angle", type=float, default=35.0, help="min strut elevation [deg]")
     g.add_argument("--max-bridge", type=float, default=10.0, help="max horizontal span of flat bridges [mm]")
@@ -262,8 +265,13 @@ def parse_args(argv=None):
         if z0 < 1.5:
             p.error(f"--clip-groove: --band {args.band} too low for the groove; "
                     f"need >= {args.groove_height + 4.0}")
-        if args.groove_depth > args.wall - 1.5:
-            p.error(f"--groove-depth must leave >= 1.5 mm of the {args.wall} mm band")
+        if args.band_wall is None:             # thin walls: the band grows inward for the groove
+            args.band_wall = max(args.wall, args.groove_depth + 1.5)
+        if not args.wall <= args.band_wall <= args.wall + 2.0:
+            p.error(f"--band-wall must be in [--wall, --wall + 2] = [{args.wall}, {args.wall + 2.0}] mm")
+        if args.groove_depth > args.band_wall - 1.5:
+            p.error(f"--groove-depth must leave >= 1.5 mm of the {args.band_wall} mm band "
+                    f"(raise --band-wall)")
     if args.eyelets is None:
         args.eyelets = args.eyelets_default
     del args.eyelets_default
@@ -316,7 +324,7 @@ def check_unused_options(p, args, argv):
         p.error(f"{', '.join(tray)} need tray in --parts")
     if "--standoff" in given and not parts & {"tray", "planter"}:
         p.error("--standoff needs tray or planter in --parts")
-    groove = sorted(o for o in given if o.startswith("--groove-"))
+    groove = sorted(o for o in given if o.startswith("--groove-") or o == "--band-wall")
     if groove and not args.clip_groove:
         p.error(f"{', '.join(groove)} need --clip-groove")
     planter = sorted(o for o in given if o.startswith("--planter"))
@@ -892,7 +900,10 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
         if mt is not None:                     # dout_z + t: distance from the inner face
             wall = membrane_wall(wall, dout_z + fr.t, z, args, mt, k)
-        band = rounded_box2(pw, abs(z - zc_b), fr.t / 2, args.band / 2 + 1, 1.5)
+        # band thickened inward (--band-wall), outer face flush; pw when not (byte-identical)
+        tb = getattr(args, "band_wall", None) or fr.t
+        band = rounded_box2(pw if tb == fr.t else np.abs(dout_z + tb / 2), abs(z - zc_b), tb / 2,
+                            args.band / 2 + 1, 1.5)
         rim = rounded_box2(pw, abs(z - (H - args.rim / 2)), fr.t / 2, args.rim / 2, 2.0)
         flo = np.maximum(fl, abs(z - (args.floor / 2 - 0.5)) - (args.floor / 2 + 0.5))
         if mt is not None:                     # floor membrane: plate on the underside; hard

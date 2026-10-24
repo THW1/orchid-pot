@@ -420,6 +420,8 @@ def fingerprint(args, struts=None):
         keys += ["wall_style"]
     if d.get("clip_groove"):                  # only then: older/groove-less pots keep their hash
         keys += ["clip_groove", "groove_depth", "groove_height", "layer"]   # layer: groove floor
+        if (d.get("band_wall") or 0) > d["wall"]:   # only then: thicker-band pots differ
+            keys += ["band_wall"]
     out = {"shape": hashlib.sha256(json.dumps({k: d[k] for k in keys}, sort_keys=True).encode()).hexdigest()[:12]}
     if struts is not None:
         q = np.round(np.vstack([np.asarray(p, float).reshape(len(p), -1)[:, :3] for p in struts]) * 1000).astype(np.int64)

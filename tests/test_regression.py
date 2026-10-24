@@ -213,3 +213,19 @@ def test_membrane_groove_clip_tray_fits(tmp_path):
                    check=True, capture_output=True)
     fc = json.loads((tmp_path / "g_tray_clip_report.json").read_text())["fit_check"]
     assert fc["ok"] and fc["seated_overlap_mm3"] == 0.0
+
+
+def test_band_wall_grows_for_the_groove():
+    """--clip-groove on thin walls: the band thickens inward to groove depth + 1.5 instead of
+    limiting the groove; --band-wall sets it, within [--wall, --wall + 2]."""
+    sys.path.insert(0, str(ROOT))
+    import orchid_pot
+    a = orchid_pot.parse_args(["box", "--clip-groove", "--wall", "2.5", "--groove-depth", "2.0"])
+    assert a.band_wall == 3.5
+    assert orchid_pot.parse_args(["box", "--clip-groove"]).band_wall == 5.0     # wall wins
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("box", "--clip-groove", "--wall", "2.5", "--band-wall", "3.0", "--groove-depth", "2.0", "--graph-only")
+    assert r.returncode == 2 and "raise --band-wall" in r.stderr
+    r = run("box", "--band-wall", "4", "--graph-only")
+    assert r.returncode == 2 and "need --clip-groove" in r.stderr

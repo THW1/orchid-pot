@@ -399,7 +399,7 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     sel_idx, Ep, W, Zs = [], [], [], []
     for iz, z in enumerate(g.ax[2]):
         q = np.hypot(rho2 / a, (z - zc) / c)
-        m = np.abs(q - 1) * min(a, c) < t / 2 + 3.0
+        m = np.abs(q - 1) * min(a, c) < t / 2 + 3.0 + max((getattr(args, "band_wall", None) or t) - t, 0.0)
         if not m.any():
             continue
         rho, th = rho2[m], th2[m]
@@ -440,7 +440,9 @@ def build_orb_sdf(args, sh, polys, gaps, fsegs, stats):
     mt = membrane_top(args, H, stats)
     if mt is not None:                         # W + t/2: distance from the inner face
         wall = membrane_wall(wall, W + t / 2, Zs, args, mt, k)
-    band = rounded_box2(aw, np.abs(Zs - (args.band / 2 - 1)), t / 2, args.band / 2 + 1, 1.5)
+    tb = getattr(args, "band_wall", None) or t  # thickened inward, outer face flush
+    band = rounded_box2(aw if tb == t else np.abs(W - t / 2 + tb / 2), np.abs(Zs - (args.band / 2 - 1)),
+                        tb / 2, args.band / 2 + 1, 1.5)
     rim = rounded_box2(aw, np.abs(Zs - (H - args.rim / 2)), t / 2, args.rim / 2, 2.0)
 
     for iz, z in enumerate(g.ax[2]):
