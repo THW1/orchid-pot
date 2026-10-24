@@ -333,13 +333,49 @@ def membrane_top(args, H, stats):
     return zt
 
 
-def membrane_wall(wall, d_in, z, args, zt, k):
+def membrane_wall(wall, d_in, z, args, zt, k, cut=None):
     """Lattice wall SDF plus the cell membrane: a slab of --membrane thickness on the inner
     face (d_in = distance from the inner face towards the outside), up to height zt.
     The membrane is a half-space smooth-joined to the struts (fillet k at the strut sides)
     and only then cut flat at the inner face: a smooth union of the coinciding inner faces
-    would bulge them inwards by k/4 (cf. the solid-wall band ridge)."""
-    return np.maximum(smin(wall, np.maximum(d_in - args.membrane, z - zt), k), -d_in)
+    would bulge them inwards by k/4 (cf. the solid-wall band ridge). cut > 0 removes the
+    membrane (open cells, --membrane-open)."""
+    m = np.maximum(d_in - args.membrane, z - zt)
+    if cut is not None:
+        m = np.maximum(m, cut)
+    return np.maximum(smin(wall, m, k), -d_in)
+
+
+def open_cells(F, rows, du, dz, args, stats):
+    """--membrane-open on the unrolled wall: label the cells (F > 0: outside struts) between
+    band and rim, periodic in u; open round(share * n) of them, picked by --seed on a
+    stream of its own (the strut pattern stays the same). Fragments < 1 mm^2 stay closed.
+    Returns the open mask with every strut pixel assigned to its nearest cell, so the
+    open/closed boundary runs along strut centre lines, inside solid material. (Growing
+    the mask by a fixed distance reached across thin struts and cut the closed neighbour's
+    membrane at the strut's rounded inner edge: 25 micro-voids, decimation failed.)"""
+    lab, n = ndimage.label((F > 0) & rows[:, None])
+    parent = np.arange(n + 1)                  # merge cells across the seam u = 0 / P
+    def find(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+    a, b = lab[:, 0], lab[:, -1]
+    for x, y in set(zip(a[(a > 0) & (b > 0)].tolist(), b[(a > 0) & (b > 0)].tolist())):
+        parent[find(x)] = find(y)
+    lab = np.array([find(i) for i in range(n + 1)])[lab]
+    ids, size = np.unique(lab[lab > 0], return_counts=True)
+    cells = ids[size * du * dz >= 1.0]
+    k = int(round(args.membrane_open * len(cells)))
+    pick = np.random.default_rng([args.seed, 0x6f70656e]).choice(cells, k, replace=False) if k else []
+    opened = np.isin(lab, pick)
+    stats["membrane"]["open_cells"] = [k, int(len(cells))]
+    # nearest cell of every pixel; 3 copies side by side so it sees across the seam
+    nu = F.shape[1]
+    t3 = np.tile(lab, 3)
+    d, (iz, iu) = ndimage.distance_transform_edt(t3 == 0, sampling=(dz, du), return_indices=True)
+    near = np.isin(t3[iz, iu], pick)[:, nu:2 * nu]
+    return opened | (near & (F <= 0) & (d[:, nu:2 * nu] <= args.strut + 1.0))
 
 
 VENT_MIN_PILLAR = 4.0                      # wall left between two vent slots [mm]

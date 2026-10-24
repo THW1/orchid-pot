@@ -77,7 +77,7 @@ from scipy.spatial import Voronoi, cKDTree
 
 from potlib import (Grid, fingerprint, finish, floor_field, floor_segments, grade_fraction, poisson,
                     drain_holes_sdf, groove_geometry, groove_sdf, pt_seg_dist, require_rim_crossings,
-                    membrane_top, membrane_wall, vent_geometry, vent_slots_sdf,
+                    membrane_top, membrane_wall, open_cells, vent_geometry, vent_slots_sdf,
                     round_isect, rounded_box2, seg_seg_dist, smin, wall_metrics)
 
 
@@ -95,6 +95,9 @@ def parse_args(argv=None):
     g.add_argument("--membrane", type=float, nargs="?", const=1.2, default=0.0,
                    help="voronoi pots: close the cells with a thin wall on the inner face and floor "
                         "underside [mm] (flag alone: 1.2 = 3 lines; 0 = open lattice)")
+    g.add_argument("--membrane-open", type=float, default=0.0,
+                   help="share of the wall cells left open (0-1), picked by --seed; "
+                        "box/cylinder (default 0: all closed)")
     g.add_argument("--membrane-top", type=float, default=None,
                    help="membrane ends at this height [mm]; cells above stay open for ventilation "
                         "(default: up to the rim)")
@@ -232,6 +235,12 @@ def parse_args(argv=None):
         p.error("--drain-* only apply to --wall-style solid or --membrane (the lattice floor is open)")
     if "--membrane-top" in drain and not args.membrane:
         p.error("--membrane-top needs --membrane")
+    if "--membrane-open" in drain and not args.membrane:
+        p.error("--membrane-open needs --membrane")
+    if args.membrane_open and not 0 < args.membrane_open <= 1:
+        p.error("--membrane-open is a share of the cells: (0, 1]")
+    if args.membrane_open and args.shape == "orb":
+        p.error("--membrane-open: box and cylinder only (the orb has no unrolled cell chart)")
     if args.membrane:
         if not 0.8 <= args.membrane <= args.wall - 1.0:
             p.error(f"--membrane must be in [0.8, --wall - 1.0 = {args.wall - 1.0}] mm "
@@ -882,6 +891,11 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
     solid_wall = args.wall_style == "solid"
     fl = dfoot + 1.0 if solid_wall else floor_field(g, fsegs, dfoot, args)
     mt = membrane_top(args, H, stats)
+    oc = None
+    if mt is not None and args.membrane_open:
+        rows = (g.ax[2] > args.band) & (g.ax[2] < min(mt, H - args.rim))  # cells above mt are open
+        oc = open_cells(F, rows, U[1] - U[0], g.h, args, stats)
+        iu = np.clip(np.floor(uxy / (U[1] - U[0])).astype(int), 0, len(U) - 1)
     if (solid_wall or mt is not None) and args.drain_holes:
         r_in = (half - args.wall) if args.shape == "box" else float(fr.r_mid(0.0)) - args.wall / 2
         holes = drain_holes_sdf(X2, Y2, args, r_in)
@@ -899,7 +913,8 @@ def build_sdf(args, fr, polys, gussets, fsegs, stats):
         dout_z, pw = fr.wall_fields(X2, Y2, z)
         wall = round_isect(dpat, pw - fr.t / 2, args.edge_round)
         if mt is not None:                     # dout_z + t: distance from the inner face
-            wall = membrane_wall(wall, dout_z + fr.t, z, args, mt, k)
+            cut = np.where(oc[iz][iu], dpat + k, -1e3) if oc is not None else None
+            wall = membrane_wall(wall, dout_z + fr.t, z, args, mt, k, cut)
         # band thickened inward (--band-wall), outer face flush; pw when not (byte-identical)
         tb = getattr(args, "band_wall", None) or fr.t
         band = rounded_box2(pw if tb == fr.t else np.abs(dout_z + tb / 2), abs(z - zc_b), tb / 2,

@@ -229,3 +229,27 @@ def test_band_wall_grows_for_the_groove():
     assert r.returncode == 2 and "raise --band-wall" in r.stderr
     r = run("box", "--band-wall", "4", "--graph-only")
     assert r.returncode == 2 and "need --clip-groove" in r.stderr
+
+
+def test_membrane_open(tmp_path):
+    """--membrane-open: a seeded share of the wall cells stays open (holes through the wall),
+    the rest closed; one body, no islands, no micro-voids. Orb and misuse are errors."""
+    run = lambda *a: subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), *a],
+                                    capture_output=True, text=True)
+    r = run("box", "--membrane-open", "0.3", "--graph-only")
+    assert r.returncode == 2 and "needs --membrane" in r.stderr
+    r = run("orb", "--membrane", "--membrane-open", "0.3", "--graph-only")
+    assert r.returncode == 2 and "box and cylinder only" in r.stderr
+    r = run("box", "--membrane", "--membrane-open", "1.5", "--graph-only")
+    assert r.returncode == 2 and "(0, 1]" in r.stderr
+    out = tmp_path / "o"
+    run("cylinder", "--diameter", "70", "--height", "45", "--wall", "2.5", "--strut", "2.2", "--cell", "8",
+        "--eyelets", "0", "--membrane", "--membrane-open", "0.3", "--out", str(out))
+    rep = json.loads((tmp_path / "o_report.json").read_text())
+    k, n = rep["membrane"]["open_cells"]
+    assert n > 30 and k == round(0.3 * n)
+    assert rep["bodies"] == 1 and rep["unsupported_islands"] == 0 and "micro_voids_filled" not in rep
+    mesh = trimesh.load(str(out) + ".stl")
+    rings = [len(mesh.section(plane_origin=[0, 0, z], plane_normal=[0, 0, 1]).to_2D()[0].polygons_full)
+             for z in (15, 22, 29)]
+    assert max(rings) > 1                     # an open cell breaks the wall ring

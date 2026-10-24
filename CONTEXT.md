@@ -77,7 +77,9 @@ Generated (not source): `orchid_<shape>.stl`, `orchid_<shape>_report.json`,
 - `--membrane` adds `potlib.py::membrane_wall` (inner-face slab, smooth-joined to the
   struts, then cut flat at the inner face) to the lattice wall in
   `orchid_pot.py::build_sdf` / `orb.py::build_orb_sdf`, plus a floor plate on the
-  underside; height limit from `potlib.py::membrane_top`. `potlib.py::fill_voids` in
+  underside; height limit from `potlib.py::membrane_top`. `--membrane-open` labels the
+  cells on the unrolled chart (`potlib.py::open_cells`; strut pixels go to their nearest
+  cell, so cut edges lie inside struts) and passes a cut field to `membrane_wall`. `potlib.py::fill_voids` in
   `finish` fills voids that decimation closes off.
 - `potlib.py::groove_geometry` / `potlib.py::groove_sdf` define the snap groove for both
   the pot cut (`orchid_pot.py::build_sdf`, `orb.py::build_orb_sdf`) and the groove clips

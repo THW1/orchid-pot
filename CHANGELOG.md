@@ -3,6 +3,24 @@
 All releases are annotated git tags. Details and verification results are in the commit
 messages.
 
+## v0.13.0 (2026-10-24)
+- **Groove band grows inward** (`--clip-groove`).
+  - The bottom band thickens inward to `--groove-depth` + 1.5 when the wall is thinner;
+    `--band-wall` sets it explicitly, within [`--wall`, `--wall` + 2].
+  - Thin walls keep a full-depth groove: `--wall 2.5 --groove-depth 2.0` gives a 3.5 mm
+    band and a clip reach of 1.8 mm (was capped at 0.8 mm).
+  - The outer face stays flush, so trays and planters fit unchanged.
+  - Box, cylinder and orb.
+- **`--membrane-open F`** (box, cylinder): a share F of the wall cells stays open, spread
+  over the wall and picked by `--seed`; the rest is closed by the membrane. Combines with
+  `--membrane-top`. The report lists `open_cells`.
+- **Decimation on dense lattices.**
+  - Fixed: dense lattices (`--cell 3`) were written undecimated (2.6M triangles).
+  - Duplicate triangles from the decimator are dropped.
+  - Retry ladder 0.75 / 0.6 / 0.5 / 0.3.
+  - Example: a 90 mm `--cell 3` box now has 616k triangles instead of 1.23M.
+- Existing outputs unchanged (goldens byte-identical); 3 new tests.
+
 ## v0.12.1 (2026-10-23)
 - Fix: the groove clip tray did not fit a `--membrane` pot (fit check: seated overlap
   1.2 mm³). The floor plate shares its edge with the lattice floor; their smooth union

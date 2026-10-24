@@ -105,6 +105,7 @@ Below about 50°, few strut directions can still be printed near the floor and o
 | `--wall-style` | `voronoi` | `voronoi`, `solid` | Voronoi lattice (orchids) or closed solid wall and floor (ordinary plants) |
 | `--wall` | voronoi 5, solid 2.4 (3.2 with `--clip-groove`) | 4–6 (voronoi), 1.8–3.2 (solid) | Wall thickness |
 | `--membrane` | 0 (flag alone: 1.2) | 1.2 (3 lines) | Voronoi pots: close the cells with a thin wall on the inner face and floor underside; 0 = open lattice |
+| `--membrane-open` | 0 | 0.1–0.4 | Share of the wall cells left open, picked by `--seed` (box, cylinder; needs `--membrane`) |
 | `--membrane-top` | up to the rim | band … rim bottom | Membrane ends at this height [mm]; the cells above stay open for ventilation (needs `--membrane`) |
 | `--drain-holes` | 5 (solid or membrane only) | 0–9 | Solid or membrane pots: drainage holes in the floor (centre + ring); 0 = closed bowl |
 | `--drain-dia` | 8 | 5–12 | Solid or membrane pots: drainage hole diameter |
@@ -280,9 +281,17 @@ A Voronoi pot whose cells are closed by a thin wall, to keep the moisture in. Th
 stay load-bearing and visible as relief outside; the inside is smooth.
 - **Membrane:** 1.2 mm (3 lines at 0.4 mm) on the inner face of the wall, and as a plate
   on the floor underside, with drain holes (`--drain-*`, default 5 × Ø 8 mm).
-- **Ventilation:** `--membrane-top Z` ends the membrane at height Z; the cells above stay
-  open, like a Voronoi pot. The report's `membrane` entry lists thickness, top and the
-  open height below the rim.
+- **Ventilation:**
+  - `--membrane-top Z` ends the membrane at height Z; the cells above stay open, like a
+    Voronoi pot.
+  - `--membrane-open F` leaves a share F of the wall cells open, spread over the wall and
+    picked by `--seed` (the strut pattern stays the same). Box and cylinder only.
+  - Both combine.
+  - The report's `membrane` entry lists thickness, top, the open height below the rim and
+    `open_cells` [open, total].
+- **Thin walls:** for nearly closed pots the struts can be slimmer, e.g.
+  `--wall 2.5 --strut 2.2 --cell 8`. With `--clip-groove` the bottom band then grows
+  inward to keep the groove full depth (`--band-wall`).
 - **Printing:** the membrane rises from the band, so every layer rests on the one below.
   Struts and rim gussets are as in the Voronoi pot.
 - **Weight with defaults:** box about 283 g (Voronoi 214 g).
@@ -292,6 +301,8 @@ stay load-bearing and visible as relief outside; the inside is smooth.
 ```bash
 python3 orchid_pot.py box --membrane                                   # closed up to the rim
 python3 orchid_pot.py cylinder --taper 8 --membrane --membrane-top 75  # open top cells
+python3 orchid_pot.py box --size 120 --height 80 --wall 2.5 --strut 2.2 --cell 8 \
+  --membrane --membrane-open 0.25 --clip-groove --groove-depth 2.0 --parts pot,tray --tray clip
 ```
 
 ## How printability is ensured
