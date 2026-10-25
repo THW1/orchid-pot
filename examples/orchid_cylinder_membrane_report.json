@@ -1,0 +1,163 @@
+{
+ "params": {
+  "shape": "cylinder",
+  "height": 100.0,
+  "zstretch": 1.2,
+  "wall_style": "voronoi",
+  "wall": 3.0,
+  "membrane": 1.2,
+  "membrane_open": 0.25,
+  "membrane_top": null,
+  "drain_holes": 5,
+  "drain_dia": 8.0,
+  "vent_slots": 0,
+  "vent_width": 4.0,
+  "vent_height": 25.0,
+  "strut": 3.0,
+  "cell": 10.0,
+  "eyelets": 3,
+  "seed": 7,
+  "out": "examples/orchid_cylinder_membrane",
+  "graph_only": false,
+  "edge_round": 1.0,
+  "band": 8.0,
+  "rim": 6.0,
+  "floor": 5.0,
+  "floor_cell": 16.0,
+  "floor_strut": 4.5,
+  "eyelet_hole": 6.0,
+  "eyelet_wire": 4.5,
+  "fillet": 1.5,
+  "clip_groove": true,
+  "groove_depth": 2.0,
+  "groove_height": 3.0,
+  "band_wall": 3.5,
+  "min_angle": 35.0,
+  "max_bridge": 10.0,
+  "max_arch": 25.0,
+  "grade_top": 0.25,
+  "grade_scale": 0.6,
+  "merge": 3.0,
+  "layer": 0.2,
+  "from_report": null,
+  "parts": [
+   "pot",
+   "tray"
+  ],
+  "tray": "clip",
+  "tray_gap": 3.0,
+  "tray_wall": 2.4,
+  "tray_floor": 2.0,
+  "standoff": null,
+  "tray_rise": 4.0,
+  "planter_gap": 8.0,
+  "planter_wall": 2.0,
+  "planter_floor": 2.0,
+  "planter_ribs": 4,
+  "planter_rib_clearance": 1.0,
+  "planter_eyelets": 0,
+  "clips": null,
+  "clip_width": null,
+  "clip_strain": 1.5,
+  "clip_thickness": 1.6,
+  "clip_hook": 0.6,
+  "clip_clearance": 0.3,
+  "voxel": 0.4,
+  "decimate": 0.75,
+  "diameter": 150.0,
+  "taper": 8.0
+ },
+ "shape": {
+  "type": "cylinder",
+  "outer_dia_bottom/top_mm": [
+   121.9,
+   150.0
+  ],
+  "taper_deg": 8.0
+ },
+ "voronoi_nodes": 450,
+ "voronoi_edges": 723,
+ "nodes_lifted": 24,
+ "lift_mm_median/max": [
+  0.6,
+  2.2
+ ],
+ "removed_unsupported_or_leaf_nodes": 0,
+ "shallow_kept_flat": 8,
+ "strut_crossings": 0,
+ "edges_final": 723,
+ "edge_classes": {
+  "plane": 80,
+  "steep": 458,
+  "short": 135,
+  "long": 50
+ },
+ "edge_len_mm": {
+  "min": 1.7,
+  "median": 8.8,
+  "max": 18.9
+ },
+ "wall_metrics": {
+  "struts": 643,
+  "len_share_deg_0-22/22-45/45-67/67-90": [
+   0.32,
+   0.33,
+   0.25,
+   0.09
+  ],
+  "openings": 261,
+  "open_area_share": 0.57,
+  "inscribed_dia_mm_p50/p90/max": [
+   8.5,
+   10.8,
+   14.1
+  ],
+  "height_mm_p50/p90/max": [
+   12.5,
+   17.0,
+   21.5
+  ],
+  "height_to_width_p90": 1.6
+ },
+ "rim_gaps_mm_p50/max": [
+  6.8,
+  11.5
+ ],
+ "fingerprint": {
+  "shape": "d4253f2f9eda",
+  "pattern": "22fcc9588b6d"
+ },
+ "rim_gussets": 61,
+ "gusset_area_cm2": 2.0,
+ "rim_unfilled_max_mm": 3.0,
+ "membrane": {
+  "thickness_mm": 1.2,
+  "top_mm": 97.0,
+  "open_below_rim_mm": 0.0,
+  "open_cells": [
+   66,
+   264
+  ]
+ },
+ "decimation_ratio": 0.6000000000000001,
+ "stl_roundtrip_watertight": true,
+ "triangles": 762284,
+ "watertight": true,
+ "winding_consistent": true,
+ "volume_cm3": 114.6,
+ "mass_g_petg_1.27": 146.0,
+ "bbox_mm": [
+  151.4,
+  149.9,
+  110.9
+ ],
+ "bodies": 1,
+ "overhang_area_cm2": {
+  "rim_underside": 1.1,
+  "elsewhere": 7.7,
+  "total_surface": 1127.7
+ },
+ "unsupported_islands": 0,
+ "island_positions": [],
+ "cantilevers": {}
+}

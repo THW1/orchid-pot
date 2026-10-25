@@ -12,6 +12,12 @@ eyelets. The shape is chosen as a subcommand:
 
 It is tuned for PETG with a 0.4 mm nozzle, printed upright without supports.
 
+| Voronoi box (Vanda) | Membrane cylinder, 25 % open cells |
+|---|---|
+| ![Voronoi box](examples/preview_box_persp.png) | ![Membrane cylinder](examples/preview_cylinder_membrane_persp.png) |
+
+Example STLs and the commands that made them: [`examples/`](examples/README.md).
+
 Design rationale and rejected alternatives are in the context header of `orchid_pot.py`.
 
 ## Requirements
@@ -378,3 +384,10 @@ showed no warning there.
 - Orb (experimental): the opening metrics use a layout at the belly radius, so sizes near
   the floor and rim are overstated by up to about 25%. Mirror-snapping moves cells at
   the band and rim lines slightly. Not yet test-printed.
+
+## License
+
+- **Code** (`*.py`, tests, docs): MIT, see `LICENSE`. Keep the copyright notice in copies.
+- **Example designs** (`examples/`: STL files, reports, renders): CC BY 4.0, see
+  `examples/README.md`. Generate your own with the commands listed there.
+- Developed with Claude Code (Anthropic) as co-author, as noted in the commit history.

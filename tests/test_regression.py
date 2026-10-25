@@ -91,7 +91,7 @@ def test_planter_box_fits_repo_pot(tmp_path):
     islands; the pot sits without overlap and slides in freely (fit check)."""
     import shutil
     for ext in (".stl", "_report.json"):
-        shutil.copy(ROOT / f"orchid_box{ext}", tmp_path / f"pot{ext}")
+        shutil.copy(ROOT / "examples" / f"orchid_box{ext}", tmp_path / f"pot{ext}")
     subprocess.run([sys.executable, str(ROOT / "orchid_pot.py"), "box", "--parts", "planter",
                     "--out", str(tmp_path / "pot")], check=True, capture_output=True)
     r = json.loads((tmp_path / "pot_planter_report.json").read_text())

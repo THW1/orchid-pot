@@ -1,2 +1,10 @@
 __pycache__/
 *.log
+# generated outputs (examples/ is tracked)
+/*.stl
+/*_report.json
+/preview_*.png
+v2-3d/*.stl
+v2-3d/*_report.json
+v2-3d/preview_*.png
+dist/
